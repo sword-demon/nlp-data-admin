@@ -1,0 +1,99 @@
+services:
+  nlp-mysql:
+    image: mysql:8.0
+    container_name: nlp-mysql
+    restart: unless-stopped
+    ports:
+      - "33060:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-nlp_root_2024}
+      MYSQL_DATABASE: nlp_content
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/conf.d:/etc/mysql/conf.d
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD:-nlp_root_2024}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  nlp-redis:
+    image: redis:7-alpine
+    container_name: nlp-redis
+    restart: unless-stopped
+    ports:
+      - "16379:6379"
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-nlp_redis_2024}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  nlp-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nlp-backend
+    restart: unless-stopped
+    ports:
+      - "9501:9501"
+    volumes:
+      - ../backend:/opt/www
+    environment:
+      APP_ENV: dev
+      DB_HOST: nlp-mysql
+      DB_PORT: 3306
+      DB_DATABASE: nlp_content
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD:-nlp_root_2024}
+      REDIS_HOST: nlp-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-nlp_redis_2024}
+      TZ: Asia/Shanghai
+    networks:
+      - app-network
+    depends_on:
+      nlp-mysql:
+        condition: service_healthy
+      nlp-redis:
+        condition: service_healthy
+
+  nlp-frontend:
+    image: node:20-alpine
+    container_name: nlp-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    working_dir: /app
+    volumes:
+      - ../frontend:/app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      # 供浏览器侧引用（若使用）
+      VITE_API_BASE_URL: http://localhost:9501
+      # 供 Vite 开发服务器代理 /api 使用；容器内必须用服务名而非 localhost
+      VITE_BACKEND_URL: http://nlp-backend:9501
+    networks:
+      - app-network
+    depends_on:
+      - nlp-backend
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:
