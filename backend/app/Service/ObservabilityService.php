@@ -175,7 +175,7 @@ class ObservabilityService
                 'created_at',
             ]);
 
-        return $rows->map(fn ($r) => [
+        return $rows->map(fn($r) => [
             'id' => (int) $r->id,
             'user_id' => $r->user_id !== null ? (int) $r->user_id : null,
             'article_id' => $r->article_id !== null ? (int) $r->article_id : null,
@@ -219,7 +219,7 @@ class ObservabilityService
             'created_at',
         ]);
 
-        return $rows->map(fn ($r) => [
+        return $rows->map(fn($r) => [
             'id' => (int) $r->id,
             'user_id' => $r->user_id !== null ? (int) $r->user_id : null,
             'article_id' => $r->article_id !== null ? (int) $r->article_id : null,
@@ -269,7 +269,7 @@ class ObservabilityService
             'failed' => (int) ($row->failed_cnt ?? 0),
             'success_rate' => $total > 0 ? round($success * 100 / $total, 2) : 0.0,
             'avg_duration_ms' => (int) round((float) ($row->avg_ms ?? 0)),
-            'agents' => $agents->map(fn ($a) => [
+            'agents' => $agents->map(fn($a) => [
                 'name' => (string) $a->agent_name,
                 'count' => (int) $a->cnt,
             ])->all(),
