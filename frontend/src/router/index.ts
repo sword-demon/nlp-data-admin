@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import type { RouteRecordRaw } from "vue-router";
+import { message } from "ant-design-vue";
 import { useAuthStore } from "@/stores/auth";
 
 const routes: RouteRecordRaw[] = [
@@ -31,9 +32,19 @@ const routes: RouteRecordRaw[] = [
         component: () => import("@/pages/Workshop.vue"),
       },
       {
-        path: "dashboard",
-        name: "Dashboard",
-        component: () => import("@/pages/Dashboard.vue"),
+        path: "articles",
+        name: "ArticleList",
+        component: () => import("@/pages/ArticleList.vue"),
+      },
+      {
+        path: "articles/:id(\\d+)",
+        name: "ArticleDetail",
+        component: () => import("@/pages/ArticleDetail.vue"),
+      },
+      {
+        path: "profile",
+        name: "Profile",
+        component: () => import("@/pages/Profile.vue"),
       },
       {
         path: "vip",
@@ -45,6 +56,12 @@ const routes: RouteRecordRaw[] = [
         name: "OrderList",
         component: () => import("@/pages/OrderList.vue"),
       },
+      {
+        path: "dashboard",
+        name: "Dashboard",
+        component: () => import("@/pages/Dashboard.vue"),
+        meta: { requiresAdmin: true },
+      },
     ],
   },
 ];
@@ -54,13 +71,20 @@ const router = createRouter({
   routes,
 });
 
-// 路由守卫：未登录访问受保护页面 → /login；已登录访问 /login|/register → 首页
+// 路由守卫：
+// - 未登录访问受保护页面 → /login（带 redirect）
+// - 已登录访问 /login|/register → 首页
+// - 非 admin 访问 requiresAdmin 页面 → 首页 + 提示
 router.beforeEach((to) => {
   const auth = useAuthStore();
   if (to.meta.requiresAuth && !auth.isLoggedIn) {
     return { path: "/login", query: { redirect: to.fullPath } };
   }
   if (to.meta.requiresGuest && auth.isLoggedIn) {
+    return { path: "/" };
+  }
+  if (to.meta.requiresAdmin && auth.user?.role !== "admin") {
+    message.error("仅管理员可访问");
     return { path: "/" };
   }
   return true;

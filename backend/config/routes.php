@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Controller\AiChatController;
+use App\Controller\ArticleController;
 use App\Controller\AuthController;
 use App\Controller\IndexController;
 use App\Controller\ObservabilityController;
@@ -56,6 +57,13 @@ Router::addGroup('/api', static function () {
             Router::post('/create', [PayController::class, 'create']);
             Router::get('/status', [PayController::class, 'status']);
             Router::get('/orders', [PayController::class, 'orders']);
+        });
+
+        // 用户文章（列表 / 详情 / 删除）
+        Router::addGroup('/articles', static function () {
+            Router::get('', [ArticleController::class, 'index']);
+            Router::get('/{id:\d+}', [ArticleController::class, 'show']);
+            Router::delete('/{id:\d+}', [ArticleController::class, 'destroy']);
         });
 
         // 创作工坊（多 Agent 编排）

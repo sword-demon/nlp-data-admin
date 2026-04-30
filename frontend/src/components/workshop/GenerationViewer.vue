@@ -1,15 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import MarkdownIt from "markdown-it";
 import { useWorkshopStore } from "@/stores/workshop";
+import MarkdownRenderer from "@/components/common/MarkdownRenderer.vue";
+import ExportPanel from "@/components/workshop/ExportPanel.vue";
 
 const store = useWorkshopStore();
-
-const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
-
-const renderedContent = computed(() =>
-  store.contentBuffer ? md.render(store.contentBuffer) : "",
-);
 
 const statusLabel: Record<string, string> = {
   content_generating: "正在生成正文…",
@@ -61,7 +56,14 @@ const progressPercent = computed(() => {
         <div class="section-title">
           正文（字数：{{ store.wordCount || store.contentBuffer.length }}）
         </div>
-        <div class="content-viewer markdown-body" v-html="renderedContent" />
+        <div class="content-viewer">
+          <MarkdownRenderer
+            :content="store.contentBuffer"
+            empty="等待 AI 生成中…"
+          />
+        </div>
+
+        <ExportPanel v-if="store.isCompleted" style="margin-top: 16px" />
       </a-col>
 
       <a-col :span="8">

@@ -1,0 +1,102 @@
+# ==========================================================
+# 生产环境覆盖文件
+#
+# 使用方法：
+#   cd docker/
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# 覆盖要点：
+#   - 后端使用 Dockerfile.prod（多阶段构建，不挂载源码）
+#   - 移除前端 dev server（由 nlp-nginx 托管构建产物）
+#   - MySQL / Redis 不再映射端口到宿主机（仅内网可达）
+#   - Nginx 映射 80:80 成为主入口
+#   - 统一 json-file 日志限制，避免磁盘爆炸
+#   - 所有服务资源限制（deploy.resources）
+# ==========================================================
+
+services:
+  nlp-mysql:
+    ports: []                       # 不再对宿主机暴露
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  nlp-redis:
+    ports: []
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  nlp-backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.prod
+    volumes: []                     # 生产不挂载源码
+    ports: []                       # 内部服务，经 nginx 反代
+    environment:
+      APP_ENV: prod
+      SCAN_CACHEABLE: "true"
+      DB_HOST: nlp-mysql
+      DB_PORT: 3306
+      DB_DATABASE: nlp_content
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: nlp-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      AI_PROVIDER: ${AI_PROVIDER:-dashscope}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
+      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/api/v1}
+      DASHSCOPE_MODEL: ${DASHSCOPE_MODEL:-qwen-plus}
+      PEXELS_API_KEY: ${PEXELS_API_KEY}
+      OSS_ENABLED: ${OSS_ENABLED:-false}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET}
+      OSS_REGION: ${OSS_REGION:-cn-hangzhou}
+      OSS_ENDPOINT: ${OSS_ENDPOINT}
+      OSS_BUCKET: ${OSS_BUCKET}
+      OSS_CDN_DOMAIN: ${OSS_CDN_DOMAIN}
+      ZPAY_PID: ${ZPAY_PID}
+      ZPAY_KEY: ${ZPAY_KEY}
+      ZPAY_NOTIFY_URL: ${ZPAY_NOTIFY_URL}
+      ZPAY_RETURN_URL: ${ZPAY_RETURN_URL}
+      TZ: Asia/Shanghai
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  # 停用 dev 模式前端（使用 profiles 让默认启动跳过）
+  nlp-frontend:
+    profiles: ["dev-only"]
+
+  nlp-nginx:
+    ports:
+      - "80:80"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 128m

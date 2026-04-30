@@ -41,6 +41,8 @@ services:
       retries: 5
       start_period: 10s
 
+  # 开发模式：挂载源码，entrypoint 按需 composer install；热更新通过 Hyperf Watcher（容器外手动启动）
+  # 生产模式：见 docker-compose.prod.yml，使用 backend/Dockerfile.prod COPY 源码与 vendor
   nlp-backend:
     build:
       context: ./backend
@@ -70,6 +72,8 @@ services:
       nlp-redis:
         condition: service_healthy
 
+  # 开发模式前端：Vite dev server，volume 挂载源码
+  # 生产模式：使用 nlp-nginx 镜像内置构建产物
   nlp-frontend:
     image: node:20-alpine
     container_name: nlp-frontend
@@ -81,14 +85,33 @@ services:
       - ../frontend:/app
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     environment:
-      # 供浏览器侧引用（若使用）
       VITE_API_BASE_URL: http://localhost:9501
-      # 供 Vite 开发服务器代理 /api 使用；容器内必须用服务名而非 localhost
       VITE_BACKEND_URL: http://nlp-backend:9501
     networks:
       - app-network
     depends_on:
       - nlp-backend
+
+  # 生产/预发反代：前端 SPA + /api 反代 + SSE
+  # 本地开发期可选启动；生产模式下为主入口（80 对外）
+  nlp-nginx:
+    build:
+      context: ..
+      dockerfile: docker/nginx/Dockerfile
+    container_name: nlp-nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    networks:
+      - app-network
+    depends_on:
+      - nlp-backend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 networks:
   app-network:

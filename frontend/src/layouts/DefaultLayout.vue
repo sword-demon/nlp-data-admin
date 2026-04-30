@@ -10,13 +10,38 @@ const router = useRouter();
 const auth = useAuthStore();
 const vip = useVipStore();
 
-const menuItems = [
+interface MenuItem {
+  key: string;
+  label: string;
+  path: string;
+  adminOnly?: boolean;
+}
+
+const allMenuItems: MenuItem[] = [
   { key: "home", label: "首页", path: "/" },
   { key: "workshop", label: "创作工坊", path: "/workshop" },
-  { key: "dashboard", label: "数据看板", path: "/dashboard" },
+  { key: "articles", label: "我的文章", path: "/articles" },
   { key: "vip", label: "会员中心", path: "/vip" },
   { key: "orders", label: "我的订单", path: "/orders" },
+  { key: "profile", label: "个人中心", path: "/profile" },
+  { key: "dashboard", label: "数据看板", path: "/dashboard", adminOnly: true },
 ];
+
+const menuItems = computed<MenuItem[]>(() =>
+  allMenuItems.filter((m) => !m.adminOnly || auth.user?.role === "admin"),
+);
+
+const selectedKeys = computed<string[]>(() => {
+  const p = router.currentRoute.value.path;
+  if (p === "/") return ["home"];
+  if (p.startsWith("/workshop")) return ["workshop"];
+  if (p.startsWith("/articles")) return ["articles"];
+  if (p.startsWith("/vip")) return ["vip"];
+  if (p.startsWith("/orders")) return ["orders"];
+  if (p.startsWith("/profile")) return ["profile"];
+  if (p.startsWith("/dashboard")) return ["dashboard"];
+  return [];
+});
 
 const effectiveLevel = computed(() => vip.info?.effective_level || "free");
 
@@ -84,6 +109,7 @@ onMounted(async () => {
       <a-menu
         theme="dark"
         mode="inline"
+        :selected-keys="selectedKeys"
         @click="
           ({ key }: { key: string }) => {
             const item = menuItems.find((m) => m.key === key);
@@ -129,6 +155,12 @@ onMounted(async () => {
             </a>
             <template #overlay>
               <a-menu>
+                <a-menu-item key="profile" @click="router.push('/profile')">
+                  个人中心
+                </a-menu-item>
+                <a-menu-item key="articles" @click="router.push('/articles')">
+                  我的文章
+                </a-menu-item>
                 <a-menu-item key="vip" @click="goVip">会员中心</a-menu-item>
                 <a-menu-item key="orders" @click="router.push('/orders')">
                   我的订单

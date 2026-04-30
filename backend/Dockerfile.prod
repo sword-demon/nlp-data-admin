@@ -1,0 +1,71 @@
+# Hyperf 后端生产镜像（多阶段构建）
+#
+# 构建上下文：项目根 backend/（由 docker-compose.yml build.context 指向）
+# - Stage 1 composer-builder：仅安装生产依赖（不触发 scan / init-proxy）
+# - Stage 2 runtime：拷贝 vendor 与源码，最终镜像不含 composer / dev 工具
+#
+# 开发模式：docker-compose.yml 以 volume 挂载覆盖 /opt/www，跳过此处的 COPY，
+#          使用 docker/backend/entrypoint.sh 按需安装依赖。
+# 生产模式：docker-compose.prod.yml 不挂载源码，直接使用此镜像内的 vendor。
+
+# ============================================================
+# Stage 1: composer 依赖安装
+# ============================================================
+FROM hyperf/hyperf:8.2-alpine-v3.22-swoole AS composer-builder
+
+WORKDIR /opt/www
+
+# 先拷贝 composer 定义文件用于层缓存
+COPY composer.json composer.lock ./
+
+# 安装生产依赖（跳过 scripts 避免触发依赖扫描，运行时再执行）
+RUN composer install \
+    --no-dev \
+    --no-interaction \
+    --no-scripts \
+    --optimize-autoloader \
+    --ignore-platform-reqs \
+    --prefer-dist
+
+# ============================================================
+# Stage 2: 运行时镜像
+# ============================================================
+FROM hyperf/hyperf:8.2-alpine-v3.22-swoole AS runtime
+
+LABEL maintainer="nlp-data-admin" \
+    description="AI 多智能体内容创作平台 - 后端（Hyperf + Swoole）"
+
+ARG TIMEZONE=Asia/Shanghai
+ENV TIMEZONE=${TIMEZONE} \
+    APP_ENV=prod \
+    SCAN_CACHEABLE=false
+
+# 时区与 PHP 运行参数
+RUN set -eux \
+    && ln -sf /usr/share/zoneinfo/${TIMEZONE} /etc/localtime \
+    && echo "${TIMEZONE}" > /etc/timezone \
+    && { \
+    echo "date.timezone=${TIMEZONE}"; \
+    echo "memory_limit=512M"; \
+    echo "upload_max_filesize=64M"; \
+    echo "post_max_size=64M"; \
+    } | tee /etc/php*/conf.d/99_overrides.ini \
+    && rm -rf /var/cache/apk/* /tmp/*
+
+WORKDIR /opt/www
+
+# 先拷贝 vendor，充分利用层缓存
+COPY --from=composer-builder /opt/www/vendor ./vendor
+
+# 再拷贝业务源码
+COPY . /opt/www
+
+# 入口脚本
+COPY ../docker/backend/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh \
+    && mkdir -p runtime/logs runtime/container \
+    && chmod -R 777 runtime
+
+EXPOSE 9501
+
+ENTRYPOINT ["/entrypoint.sh"]
