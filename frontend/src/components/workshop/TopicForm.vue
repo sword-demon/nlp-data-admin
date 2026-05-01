@@ -22,7 +22,13 @@ async function handleStart(): Promise<void> {
     return;
   }
   try {
-    await store.createArticle(topic.value.trim(), style.value);
+    const researchFallback = await store.createArticle(
+      topic.value.trim(),
+      style.value,
+    );
+    if (researchFallback) {
+      message.info("选题研究资料暂不可用，已使用基础模式生成标题", 3);
+    }
     message.success("候选标题已生成，请选择");
   } catch {
     message.error(store.errorMessage || "创建失败");

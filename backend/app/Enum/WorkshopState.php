@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Enum;
 
 /**
- * 创作工坊状态机：9 个状态覆盖从选题到完成的完整流程。
+ * 创作工坊状态机：10 个状态覆盖从选题到完成的完整流程。
  *
  * 正向流转：
  *   DRAFT
- *     → TITLE_GENERATING → TITLE_SELECTING (等待用户选择)
- *     → OUTLINE_GENERATING → OUTLINE_EDITING (等待用户确认)
+ *     → TOPIC_RESEARCHING                         (Phase 3.5：外部检索+LLM 浓缩)
+ *     → TITLE_GENERATING → TITLE_SELECTING        (等待用户选择)
+ *     → OUTLINE_GENERATING → OUTLINE_EDITING      (等待用户确认)
  *     → CONTENT_GENERATING → IMAGE_ANALYZING → IMAGE_GENERATING
  *     → COMPLETED
  *
@@ -19,6 +20,7 @@ namespace App\Enum;
 enum WorkshopState: string
 {
     case DRAFT = 'draft';
+    case TOPIC_RESEARCHING = 'topic_researching';
     case TITLE_GENERATING = 'title_generating';
     case TITLE_SELECTING = 'title_selecting';
     case OUTLINE_GENERATING = 'outline_generating';
@@ -39,7 +41,8 @@ enum WorkshopState: string
             return true;
         }
         return match ($from) {
-            self::DRAFT => $this === self::TITLE_GENERATING,
+            self::DRAFT => $this === self::TOPIC_RESEARCHING,
+            self::TOPIC_RESEARCHING => $this === self::TITLE_GENERATING,
             self::TITLE_GENERATING => $this === self::TITLE_SELECTING,
             self::TITLE_SELECTING => $this === self::OUTLINE_GENERATING,
             self::OUTLINE_GENERATING => $this === self::OUTLINE_EDITING,

@@ -23,6 +23,7 @@ class Article extends Model
         'selected_title',
         'generated_titles',
         'title_supplement',
+        'research_data',
         'topic',
         'style',
         'outline',
@@ -36,6 +37,7 @@ class Article extends Model
     protected array $casts = [
         'outline' => 'json',
         'generated_titles' => 'json',
+        'research_data' => 'json',
         'images' => 'json',
         'word_count' => 'integer',
     ];

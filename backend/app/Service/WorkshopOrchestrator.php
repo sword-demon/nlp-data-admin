@@ -13,6 +13,7 @@ use App\Service\Agent\ImageAnalyzerAgent;
 use App\Service\Agent\OutlineGeneratorAgent;
 use App\Service\Agent\ParallelImageGenerator;
 use App\Service\Agent\TitleGeneratorAgent;
+use App\Service\Agent\TopicResearchAgent;
 use Hyperf\Context\Context;
 use Hyperf\Contract\ConfigInterface;
 use Hyperf\Contract\StdoutLoggerInterface;
@@ -23,8 +24,8 @@ use Throwable;
  * 创作工坊编排器（状态机 + Agent 调度）。
  *
  * 状态流：
- *   DRAFT → TITLE_GENERATING → TITLE_SELECTING                 (同步 HTTP 返回)
- *         → OUTLINE_GENERATING → OUTLINE_EDITING               (同步 HTTP 返回)
+ *   DRAFT → TOPIC_RESEARCHING → TITLE_GENERATING → TITLE_SELECTING   (同步 HTTP 返回)
+ *         → OUTLINE_GENERATING → OUTLINE_EDITING                     (同步 HTTP 返回)
  *         → CONTENT_GENERATING → IMAGE_ANALYZING → IMAGE_GENERATING → COMPLETED
  *         └─────────────────── SSE 流式推送 ──────────────────┘
  *
@@ -35,6 +36,7 @@ use Throwable;
 class WorkshopOrchestrator
 {
     public function __construct(
+        private readonly TopicResearchAgent $topicResearch,
         private readonly TitleGeneratorAgent $titleAgent,
         private readonly OutlineGeneratorAgent $outlineAgent,
         private readonly ContentGeneratorAgent $contentAgent,
@@ -46,9 +48,9 @@ class WorkshopOrchestrator
     ) {}
 
     /**
-     * 第 1 步：创建文章并生成候选标题。
+     * 第 1 步：创建文章 → 选题研究（可降级）→ 生成候选标题。
      *
-     * @return array{article: Article, titles: array<int, array<string, mixed>>}
+     * @return array{article: Article, titles: array<int, array<string, mixed>>, research_fallback: bool}
      */
     public function startCreation(int $userId, string $topic, string $style): array
     {
@@ -71,12 +73,34 @@ class WorkshopOrchestrator
         Context::set('article_id', (int) $article->getKey());
         Context::set('user_id', $userId);
 
+        // === 阶段 1a：选题研究（增强能力，失败降级） ===
+        // 当前 slice 01 桩永远降级；slice 02/03 接入 Exa + 四道防线。
+        $this->transitionTo($article, WorkshopState::TOPIC_RESEARCHING);
+
+        $researchFallback = true;
+        try {
+            $researchResult = $this->topicResearch->execute(['topic' => $topic]);
+            $article->research_data = $researchResult['research_data'] ?? null;
+            $researchFallback = (bool) ($researchResult['fallback'] ?? true);
+            $article->save();
+        } catch (Throwable $e) {
+            // 研究失败不阻塞主链路（ADR 0001）
+            $this->logger->warning(
+                "[Workshop#{$article->getKey()}] topic research exception, degraded: {$e->getMessage()}"
+            );
+            $article->research_data = null;
+            $article->save();
+            $researchFallback = true;
+        }
+
+        // === 阶段 1b：标题生成 ===
         $this->transitionTo($article, WorkshopState::TITLE_GENERATING);
 
         try {
             $result = $this->titleAgent->execute([
                 'topic' => $topic,
                 'style' => $style,
+                'research_data' => $article->research_data,
             ]);
         } catch (Throwable $e) {
             $this->markFailed($article, $e->getMessage());
@@ -90,7 +114,11 @@ class WorkshopOrchestrator
 
         $this->transitionTo($article, WorkshopState::TITLE_SELECTING);
 
-        return ['article' => $article, 'titles' => $titles];
+        return [
+            'article' => $article,
+            'titles' => $titles,
+            'research_fallback' => $researchFallback,
+        ];
     }
 
     /**
@@ -125,6 +153,7 @@ class WorkshopOrchestrator
             $result = $this->outlineAgent->execute([
                 'title' => $selected,
                 'supplement' => $supplement,
+                'research_data' => $article->research_data,
             ]);
         } catch (Throwable $e) {
             $this->markFailed($article, $e->getMessage());
@@ -181,6 +210,7 @@ class WorkshopOrchestrator
                 'style' => (string) $article->style,
                 'supplement' => (string) $article->title_supplement,
                 'outline_markdown' => (string) ($outline['markdown'] ?? ''),
+                'research_data' => $article->research_data,
             ]);
             foreach ($generator as $chunk) {
                 $content .= $chunk;
@@ -211,6 +241,7 @@ class WorkshopOrchestrator
             $analyzeResult = $this->imageAnalyzer->execute([
                 'content' => $content,
                 'placeholders' => $placeholders,
+                'research_data' => $article->research_data,
             ]);
         } catch (Throwable $e) {
             $this->markFailed($article, $e->getMessage());

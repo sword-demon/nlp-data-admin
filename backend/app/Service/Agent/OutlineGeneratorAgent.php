@@ -45,6 +45,10 @@ class OutlineGeneratorAgent extends AbstractAgent implements AgentInterface
             'supplement' => $supplement !== '' ? $supplement : '（无）',
         ]);
 
+        // Phase 3.5：research preamble 拼接（无研究资料回退为空串）
+        $preamble = $this->buildResearchPreamble($context['research_data'] ?? null);
+        $userPrompt = $preamble . $userPrompt;
+
         $raw = $this->providers->driver()->chat(
             $userPrompt,
             [

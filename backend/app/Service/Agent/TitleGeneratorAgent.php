@@ -45,6 +45,10 @@ class TitleGeneratorAgent extends AbstractAgent implements AgentInterface
             'style' => $style,
         ]);
 
+        // Phase 3.5：将 research_data 渲染为 preamble 拼在 user prompt 开头（无研究资料时返回空串，行为回退）
+        $preamble = $this->buildResearchPreamble($context['research_data'] ?? null);
+        $userPrompt = $preamble . $userPrompt;
+
         $raw = $this->providers->driver()->chat(
             $userPrompt,
             [

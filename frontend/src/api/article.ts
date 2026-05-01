@@ -61,6 +61,7 @@ export async function deleteArticle(id: number): Promise<void> {
 
 export const ARTICLE_STATUS_LABEL: Record<string, string> = {
   draft: "草稿",
+  topic_researching: "正在检索选题背景",
   title_generating: "生成标题中",
   title_selecting: "等待选标题",
   outline_generating: "生成大纲中",
@@ -74,6 +75,7 @@ export const ARTICLE_STATUS_LABEL: Record<string, string> = {
 
 export const ARTICLE_STATUS_COLOR: Record<string, string> = {
   draft: "default",
+  topic_researching: "processing",
   title_generating: "processing",
   title_selecting: "blue",
   outline_generating: "processing",

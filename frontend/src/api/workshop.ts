@@ -56,6 +56,7 @@ export interface GeneratedImage {
 
 export type WorkshopStatus =
   | "draft"
+  | "topic_researching"
   | "title_generating"
   | "title_selecting"
   | "outline_generating"
@@ -99,23 +100,28 @@ export interface WorkshopResult {
 
 // ============ REST API ============
 
+export interface CreateArticleResponse {
+  article_id: number;
+  status: WorkshopStatus;
+  topic: string;
+  style: string;
+  titles: TitleCandidate[];
+  /**
+   * 选题研究降级标志：true 表示后端未能拿到研究资料（Exa 关闭 / 限流 / 异常 /
+   * 零结果 / 锁等待超时等），已走基础模式生成标题。仅用于前端微量提示，
+   * 成功路径不应返回或为 false。
+   */
+  research_fallback?: boolean;
+}
+
 export async function createArticle(
   topic: string,
   style: string,
-): Promise<{
-  article_id: number;
-  status: WorkshopStatus;
-  titles: TitleCandidate[];
-}> {
-  const { data } = await http.post<
-    ApiResponse<{
-      article_id: number;
-      status: WorkshopStatus;
-      topic: string;
-      style: string;
-      titles: TitleCandidate[];
-    }>
-  >("/workshop/create", { topic, style });
+): Promise<CreateArticleResponse> {
+  const { data } = await http.post<ApiResponse<CreateArticleResponse>>(
+    "/workshop/create",
+    { topic, style },
+  );
   return data.data;
 }
 

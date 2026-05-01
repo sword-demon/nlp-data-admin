@@ -47,6 +47,10 @@ class ImageAnalyzerAgent extends AbstractAgent implements AgentInterface
             'content' => $content,
         ]);
 
+        // Phase 3.5：research preamble 拼接，让配图建议在主题上不偏离
+        $preamble = $this->buildResearchPreamble($context['research_data'] ?? null);
+        $userPrompt = $preamble . $userPrompt;
+
         $raw = $this->providers->driver()->chat(
             $userPrompt,
             [

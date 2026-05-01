@@ -23,6 +23,50 @@ abstract class AbstractAgent
     }
 
     /**
+     * 把 TopicResearchAgent 产出的 research_data 渲染为可拼在 user prompt 开头的 preamble。
+     *
+     * 返回值结构（无研究资料时返回空串，下游行为与改造前一致）：
+     *
+     *   【选题背景研究】
+     *   {结构化事实清单 Markdown}
+     *
+     *   【参考来源】
+     *   1. {title} — {url}
+     *   2. ...
+     *   ---
+     *
+     * @param array{summary?: ?string, sources?: array<int, array<string, mixed>>}|null $researchData
+     */
+    protected function buildResearchPreamble(?array $researchData): string
+    {
+        if (empty($researchData) || empty($researchData['summary'])) {
+            return '';
+        }
+        $summary = trim((string) $researchData['summary']);
+        if ($summary === '') {
+            return '';
+        }
+
+        $sourcesLines = '';
+        foreach ((array) ($researchData['sources'] ?? []) as $i => $s) {
+            if (! is_array($s)) {
+                continue;
+            }
+            $n = $i + 1;
+            $title = trim((string) ($s['title'] ?? ''));
+            $url = trim((string) ($s['url'] ?? ''));
+            $sourcesLines .= "{$n}. {$title} — {$url}\n";
+        }
+
+        $preamble = "【选题背景研究】\n{$summary}\n";
+        if ($sourcesLines !== '') {
+            $preamble .= "\n【参考来源】\n{$sourcesLines}";
+        }
+        $preamble .= "---\n\n";
+        return $preamble;
+    }
+
+    /**
      * 尽力解码模型输出的 JSON：
      * - 去除可能的 ```json / ``` 围栏
      * - 定位第一个 [ 或 { 到最后一个 ] 或 }

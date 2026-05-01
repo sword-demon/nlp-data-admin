@@ -73,6 +73,10 @@ class ContentGeneratorAgent extends AbstractAgent implements AgentInterface
             'outline_markdown' => $outlineMarkdown,
         ]);
 
+        // Phase 3.5：research preamble 拼接（无研究资料时空串）
+        $preamble = $this->buildResearchPreamble($context['research_data'] ?? null);
+        $userPrompt = $preamble . $userPrompt;
+
         $generator = $this->providers->driver()->chatStream(
             $userPrompt,
             [

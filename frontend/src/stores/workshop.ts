@@ -76,7 +76,7 @@ export const useWorkshopStore = defineStore("workshop", () => {
     }
   }
 
-  async function createArticle(t: string, s: string): Promise<void> {
+  async function createArticle(t: string, s: string): Promise<boolean> {
     loading.value = true;
     errorMessage.value = "";
     try {
@@ -87,6 +87,7 @@ export const useWorkshopStore = defineStore("workshop", () => {
       style.value = s;
       titles.value = r.titles;
       selectedTitleIndex.value = -1;
+      return r.research_fallback === true;
     } catch (e) {
       errorMessage.value = extractError(e);
       throw e;

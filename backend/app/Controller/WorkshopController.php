@@ -64,6 +64,7 @@ class WorkshopController extends AbstractController
             'topic' => $article->topic,
             'style' => $article->style,
             'titles' => $result['titles'],
+            'research_fallback' => (bool) ($result['research_fallback'] ?? false),
         ], 'title_candidates_generated');
     }
 

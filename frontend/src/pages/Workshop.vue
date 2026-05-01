@@ -12,6 +12,7 @@ const store = useWorkshopStore();
 const stepMap: Record<string, number> = {
   idle: 0,
   draft: 0,
+  topic_researching: 0,
   title_generating: 0,
   title_selecting: 1,
   outline_generating: 1,
@@ -62,6 +63,7 @@ onBeforeUnmount(() => {
       v-if="
         store.status === 'idle' ||
         store.status === 'draft' ||
+        store.status === 'topic_researching' ||
         store.status === 'title_generating'
       "
     />
