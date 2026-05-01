@@ -32,7 +32,7 @@ function render(): void {
   inst.setOption({
     tooltip: { trigger: "axis" },
     legend: { data: ["调用次数", "成功率 %", "平均耗时(s)"], bottom: 0 },
-    grid: { left: 60, right: 60, top: 30, bottom: 40 },
+    grid: { left: 60, right: 60, top: 30, bottom: 60, containLabel: true },
     xAxis: { type: "category", data: dates, boundaryGap: false },
     yAxis: [
       { type: "value", name: "次数" },

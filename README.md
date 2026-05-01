@@ -50,6 +50,20 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 打开浏览器访问 `http://<服务器 IP>/`。完整部署说明见 [docs/deployment.md](./docs/deployment.md)。
 
+### 🔑 默认管理员账号
+
+迁移执行后会自动创建一个内置管理员（幂等操作，已存在则跳过）：
+
+| 字段   | 值                                           |
+| ------ | -------------------------------------------- |
+| 邮箱   | `admin@nlp.local`                            |
+| 用户名 | `admin`                                      |
+| 密码   | `admin888`                                   |
+| 角色   | `admin`                                      |
+| VIP    | `yearly`（配额 999999，有效期至 2038-01-01） |
+
+> ⚠️ 生产环境首次登录后请立即修改此密码，以免泄露风险。
+
 ### 本地开发模式
 
 ```bash
@@ -140,4 +154,4 @@ npx vue-tsc -b      # 类型检查
 
 ## 📄 License
 
-MIT
+本项目基于 [MIT License](./LICENSE) 开源，Copyright (c) 2026 [sword-demon](https://github.com/sword-demon)。

@@ -126,7 +126,7 @@ onMounted(async () => {
     <a-layout>
       <a-layout-header class="app-header">
         <h3 class="app-title">AI 多智能体内容创作平台</h3>
-        <a-space v-if="auth.user" :size="12">
+        <a-space v-if="auth.user" :size="12" align="center">
           <a-tag
             :color="tierTagColor"
             style="cursor: pointer; font-weight: 500"
@@ -201,13 +201,19 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  line-height: normal;
 }
 .app-title {
   margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
 }
 .quota {
   color: rgba(0, 0, 0, 0.55);
   font-size: 13px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 .quota.warn {
   color: #fa541c;
@@ -216,6 +222,9 @@ onMounted(async () => {
 .expire-hint {
   color: rgba(0, 0, 0, 0.45);
   font-size: 12px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 .user-trigger {
   display: inline-flex;
@@ -223,8 +232,10 @@ onMounted(async () => {
   gap: 8px;
   color: rgba(0, 0, 0, 0.85);
   cursor: pointer;
+  line-height: 1;
 }
 .user-name {
   font-size: 14px;
+  line-height: 1;
 }
 </style>

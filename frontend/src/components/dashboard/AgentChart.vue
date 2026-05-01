@@ -39,8 +39,12 @@ function renderBar(): void {
   barInst.setOption({
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
     legend: { data: ["调用次数", "平均耗时(s)"], bottom: 0 },
-    grid: { left: 60, right: 60, top: 30, bottom: 40 },
-    xAxis: { type: "category", data: names, axisLabel: { rotate: 20 } },
+    grid: { left: 60, right: 60, top: 30, bottom: 80, containLabel: true },
+    xAxis: {
+      type: "category",
+      data: names,
+      axisLabel: { rotate: 20, interval: 0, margin: 12 },
+    },
     yAxis: [
       { type: "value", name: "次数" },
       { type: "value", name: "耗时(s)" },
@@ -145,7 +149,7 @@ watch(
 <style scoped>
 .chart-bar {
   width: 100%;
-  height: 320px;
+  height: 360px;
 }
 .chart-pie {
   width: 100%;
