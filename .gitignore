@@ -8,23 +8,45 @@ Thumbs.db
 .qoder/
 *.swp
 *.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 
-# Backend
+# Scratch / temp
+.scratch/
+
+# Backend (Hyperf / PHP)
 backend/vendor/
 backend/runtime/
-backend/.env
 backend/.runtime/
+backend/.env
+backend/.buildpath
+backend/.project
+backend/.settings/
+backend/.phpintel/
+backend/.phpunit*
+backend/*.cache
+backend/phpstan.neon
+backend/phpunit.xml
+backend/*.patch
 
-# Frontend
+# Frontend (Vue 3 / Vite)
 frontend/node_modules/
 frontend/dist/
+frontend/dist-ssr/
 
 # Docker
 docker/mysql/data/
 docker/redis/data/
+docker-compose.override.yml
 
 # Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
 runtime/
 
 # Env
@@ -35,3 +57,7 @@ runtime/
 # Uploads
 uploads/
 storage/
+
+# Test / Coverage
+coverage/
+.phpunit.result.cache

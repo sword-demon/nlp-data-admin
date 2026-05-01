@@ -6,7 +6,7 @@ services:
     ports:
       - "33060:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-nlp_root_2024}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?请设置 DB_PASSWORD 环境变量}
       MYSQL_DATABASE: nlp_content
       TZ: Asia/Shanghai
     volumes:
@@ -16,7 +16,7 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD:-nlp_root_2024}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD:?请设置 DB_PASSWORD 环境变量}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,14 +28,15 @@ services:
     restart: unless-stopped
     ports:
       - "16379:6379"
-    command: redis-server /usr/local/etc/redis/redis.conf
+    command: >
+      sh -c "redis-server /usr/local/etc/redis/redis.conf --requirepass $${REDIS_PASSWORD:?请设置 REDIS_PASSWORD 环境变量}"
     volumes:
       - redis_data:/data
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
     networks:
       - app-network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-nlp_redis_2024}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?请设置 REDIS_PASSWORD 环境变量}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -59,10 +60,10 @@ services:
       DB_PORT: 3306
       DB_DATABASE: nlp_content
       DB_USERNAME: root
-      DB_PASSWORD: ${DB_PASSWORD:-nlp_root_2024}
+      DB_PASSWORD: ${DB_PASSWORD:?请设置 DB_PASSWORD 环境变量}
       REDIS_HOST: nlp-redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-nlp_redis_2024}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?请设置 REDIS_PASSWORD 环境变量}
       TZ: Asia/Shanghai
     networks:
       - app-network

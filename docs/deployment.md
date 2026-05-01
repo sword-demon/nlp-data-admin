@@ -96,7 +96,7 @@ docker compose up -d            # 默认启 dev，nlp-frontend 走 Vite dev serv
 - 后端：http://localhost:9501（源码 volume 挂载）
 - Nginx：http://localhost:8080（可选；dev 非必需）
 - MySQL：`127.0.0.1:33060`
-- Redis：`127.0.0.1:16379`（密码 `nlp_redis_2024`）
+- Redis：`127.0.0.1:16379`（密码见 `backend/.env` 中 `REDIS_PASSWORD`）
 
 ---
 
