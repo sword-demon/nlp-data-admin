@@ -9,6 +9,9 @@ use App\Constants\AgentPrompts;
 use App\Constants\Code;
 use App\Contract\AgentInterface;
 use App\Exception\BusinessException;
+use App\Service\Agent\Outcome\AgentOutcome;
+use App\Service\Agent\Outcome\Payload\TitleCandidate;
+use App\Service\Agent\Outcome\Payload\TitleCandidates;
 use App\Service\ModelProviderService;
 use Generator;
 use Hyperf\Contract\StdoutLoggerInterface;
@@ -16,8 +19,7 @@ use Hyperf\Contract\StdoutLoggerInterface;
 /**
  * 标题生成 Agent：输入 topic/style，输出 3-5 个候选标题。
  *
- * 输出格式：
- *   [{title, analysis, score}]
+ * Payload：TitleCandidates。空输出抛异常 → FAILED 结局（核心能力）。
  */
 class TitleGeneratorAgent extends AbstractAgent implements AgentInterface
 {
@@ -32,7 +34,7 @@ class TitleGeneratorAgent extends AbstractAgent implements AgentInterface
     }
 
     #[AgentLog(name: 'title_generator')]
-    public function execute(array $context): array
+    public function execute(array $context): AgentOutcome
     {
         $topic = (string) ($context['topic'] ?? '');
         $style = (string) ($context['style'] ?? '通用');
@@ -62,30 +64,32 @@ class TitleGeneratorAgent extends AbstractAgent implements AgentInterface
 
         $decoded = $this->decodeJson($raw, $this->getName());
 
-        // 规整：仅保留合法对象
         $titles = [];
         foreach ($decoded as $item) {
             if (! is_array($item) || empty($item['title'])) {
                 continue;
             }
-            $titles[] = [
-                'title' => (string) $item['title'],
-                'analysis' => (string) ($item['analysis'] ?? ''),
-                'score' => (int) ($item['score'] ?? 0),
-            ];
+            $titles[] = new TitleCandidate(
+                title: (string) $item['title'],
+                analysis: (string) ($item['analysis'] ?? ''),
+                score: (int) ($item['score'] ?? 0),
+            );
         }
 
         if (empty($titles)) {
             throw new BusinessException(Code::WORKSHOP_AGENT_FAILED, 'no title generated', 500);
         }
 
-        return ['titles' => array_slice($titles, 0, 5)];
+        return AgentOutcome::ok(new TitleCandidates(titles: array_slice($titles, 0, 5)));
     }
 
     public function executeStream(array $context): Generator
     {
-        // 标题生成使用非流式：完成后一次性 yield 整个 JSON 字符串
-        $result = $this->execute($context);
-        yield json_encode($result, JSON_UNESCAPED_UNICODE);
+        // 标题生成使用非流式：完成后一次性 yield 整个 JSON 字符串，流尾 return Outcome
+        $outcome = $this->execute($context);
+        /** @var TitleCandidates $payload */
+        $payload = $outcome->payload;
+        yield json_encode(['titles' => $payload->toArray()], JSON_UNESCAPED_UNICODE);
+        return $outcome;
     }
 }

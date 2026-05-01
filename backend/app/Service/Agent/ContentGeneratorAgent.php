@@ -9,6 +9,9 @@ use App\Constants\AgentPrompts;
 use App\Constants\Code;
 use App\Contract\AgentInterface;
 use App\Exception\BusinessException;
+use App\Service\Agent\Outcome\AgentOutcome;
+use App\Service\Agent\Outcome\Payload\ContentDraft;
+use App\Service\Agent\Outcome\Payload\Placeholder;
 use App\Service\ModelProviderService;
 use Generator;
 use Hyperf\Contract\StdoutLoggerInterface;
@@ -16,8 +19,9 @@ use Hyperf\Contract\StdoutLoggerInterface;
 /**
  * 正文生成 Agent：根据大纲流式生成 Markdown 正文。
  *
- * - execute()：聚合所有流式 chunk 得到完整正文，返回 {content, placeholders}
- * - executeStream()：原样转发底层模型的流式增量，Orchestrator 会按 chunk 广播到 SSE
+ * 结局契约（ADR-0003）：
+ * - execute()        返回 AgentOutcome（payload=ContentDraft），内部聚合流后走 归一路径
+ * - executeStream()  逐 chunk yield，末尾 return AgentOutcome，由 Orchestrator 用 getReturn() 拿
  *
  * 正文中由模型直接插入配图占位符：![配图:关键词](placeholder://image/N)
  * 完成后用正则抽取所有占位符，供 ImageAnalyzerAgent 使用。
@@ -37,21 +41,18 @@ class ContentGeneratorAgent extends AbstractAgent implements AgentInterface
     }
 
     #[AgentLog(name: 'content_generator')]
-    public function execute(array $context): array
+    public function execute(array $context): AgentOutcome
     {
-        $buffer = '';
-        foreach ($this->executeStream($context) as $chunk) {
-            $buffer .= $chunk;
+        // 走流式接口聚合 chunk，末尾取 Generator return value（唯一的归一入口）。
+        $generator = $this->executeStream($context);
+        foreach ($generator as $chunk) {
+            // 耗尽就好，不做业务处理
+            unset($chunk);
         }
 
-        $placeholders = $this->extractPlaceholders($buffer);
-        $this->logger->debug('[ContentGeneratorAgent] generated ' . mb_strlen($buffer) . ' chars, ' . count($placeholders) . ' placeholders');
-
-        return [
-            'content' => $buffer,
-            'placeholders' => $placeholders,
-            'word_count' => mb_strlen($buffer),
-        ];
+        /** @var AgentOutcome $outcome */
+        $outcome = $generator->getReturn();
+        return $outcome;
     }
 
     #[AgentLog(name: 'content_generator_stream', logOutput: false)]
@@ -86,16 +87,30 @@ class ContentGeneratorAgent extends AbstractAgent implements AgentInterface
             ['temperature' => 0.7, 'max_tokens' => 4096]
         );
 
+        $buffer = '';
         foreach ($generator as $chunk) {
             if ($chunk === '') {
                 continue;
             }
+            $buffer .= $chunk;
             yield $chunk;
         }
+
+        $placeholders = $this->extractPlaceholderObjects($buffer);
+        $this->logger->debug(
+            '[ContentGeneratorAgent] generated ' . mb_strlen($buffer)
+                . ' chars, ' . count($placeholders) . ' placeholders'
+        );
+
+        return AgentOutcome::ok(new ContentDraft(
+            content: $buffer,
+            placeholders: $placeholders,
+            wordCount: mb_strlen($buffer),
+        ));
     }
 
     /**
-     * 从正文中抽取所有配图占位符。
+     * 从正文中抽取所有配图占位符（array 形式，保留给老外部调用者）。
      *
      * @return array<int, array{id: string, index: int, keyword: string}>
      */
@@ -112,5 +127,25 @@ class ContentGeneratorAgent extends AbstractAgent implements AgentInterface
             }
         }
         return $placeholders;
+    }
+
+    /**
+     * 抽取占位符为 Placeholder 对象数组，供 ContentDraft 构造。
+     *
+     * @return array<int, Placeholder>
+     */
+    private function extractPlaceholderObjects(string $content): array
+    {
+        $out = [];
+        if (preg_match_all(self::PLACEHOLDER_PATTERN, $content, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $m) {
+                $out[] = new Placeholder(
+                    id: 'image/' . $m[2],
+                    index: (int) $m[2],
+                    keyword: trim($m[1]),
+                );
+            }
+        }
+        return $out;
     }
 }

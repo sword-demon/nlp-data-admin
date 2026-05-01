@@ -4,17 +4,20 @@
 
 ## 核心术语
 
-| 术语             | 英文 / 字段                      | 含义                                                                                                    | 辨析                                     |
-| ---------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| **选题**         | `topic` / `article.topic`        | 用户一开始提交的种子主题，是整条创作链路的输入起点。                                                    | ≠ 标题、≠ 标题选择                       |
-| **标题候选**     | `generated_titles`               | 标题 Agent 基于选题产出的 3-5 个候选方案（含分析、评分）。                                              | —                                        |
-| **标题选择**     | `WorkshopState::TITLE_SELECTING` | human-in-the-loop 节点：用户从候选中挑一个作为正式标题。                                                | 日常口语中易与"选题"混淆，规范中必须区分 |
-| **选中标题**     | `selected_title`                 | 标题选择节点完成后写入的正式标题，后续大纲/正文以此为根。                                               | —                                        |
-| **大纲**         | `outline`                        | 二级结构：`{markdown, nodes[]}`，供正文逐节生成。                                                       | —                                        |
-| **配图占位符**   | `placeholder://image/N`          | 正文中按约定语法插入的标记，后续由配图 Agent 替换为真实图。                                             | —                                        |
-| **选题研究资料** | `research_data`                  | 针对选题执行网页检索后沉淀的事实摘要集合，作为下游各 Agent prompt 的认知基底。                          | 新增于 2026-05，TopicResearchAgent 产出  |
-| **搜索提供商**   | `SearchProviderInterface`        | 对 Exa/Tavily 等外部搜索服务的适配层，负责把异构响应抹平成统一 `{results, meta}` shape。                | Agent 不感知底层 provider                |
-| **研究降级**     | `research_fallback`              | 搜索服务不可用时 `research_data = null` 直接继续后续流程；响应里带 `research_fallback: true` 布尔提示。 | 外部服务失败**不得**击穿核心创作链路     |
+| 术语                  | 英文 / 字段                                                                                                  | 含义                                                                                                                                                                                                                                                           | 辨析                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| **选题**              | `topic` / `article.topic`                                                                                    | 用户一开始提交的种子主题，是整条创作链路的输入起点。                                                                                                                                                                                                           | ≠ 标题、≠ 标题选择                                    |
+| **标题候选**          | `generated_titles`                                                                                           | 标题 Agent 基于选题产出的 3-5 个候选方案（含分析、评分）。                                                                                                                                                                                                     | —                                                     |
+| **标题选择**          | `WorkshopState::TITLE_SELECTING`                                                                             | human-in-the-loop 节点：用户从候选中挑一个作为正式标题。                                                                                                                                                                                                       | 日常口语中易与"选题"混淆，规范中必须区分              |
+| **选中标题**          | `selected_title`                                                                                             | 标题选择节点完成后写入的正式标题，后续大纲/正文以此为根。                                                                                                                                                                                                      | —                                                     |
+| **大纲**              | `outline`                                                                                                    | 二级结构：`{markdown, nodes[]}`，供正文逐节生成。                                                                                                                                                                                                              | —                                                     |
+| **配图占位符**        | `placeholder://image/N`                                                                                      | 正文中按约定语法插入的标记，后续由配图 Agent 替换为真实图。                                                                                                                                                                                                    | —                                                     |
+| **选题研究资料**      | `research_data`                                                                                              | 针对选题执行网页检索后沉淀的事实摘要集合，作为下游各 Agent prompt 的认知基底。                                                                                                                                                                                 | 新增于 2026-05，TopicResearchAgent 产出               |
+| **搜索提供商**        | `SearchProviderInterface`                                                                                    | 对 Exa/Tavily 等外部搜索服务的适配层，负责把异构响应抹平成统一 `{results, meta}` shape。                                                                                                                                                                       | Agent 不感知底层 provider                             |
+| **研究降级**          | `research_fallback`                                                                                          | 搜索服务不可用时 `research_data = null` 直接继续后续流程；响应里带 `research_fallback: true` 布尔提示。                                                                                                                                                        | 外部服务失败**不得**击穿核心创作链路                  |
+| **Agent 执行结局**    | `AgentOutcome` / `OutcomeStatus`                                                                             | 所有 Agent 的统一返回值对象，三态：`OK` / `DEGRADED` / `FAILED`。`FAILED` 由异常冒泡产生，Agent 本身只构造 `OK` 或 `DEGRADED`。                                                                                                                                | ADR-0003；编排器内部契约，不穿透到 HTTP               |
+| **降级理由**          | `DegradationReason`                                                                                          | `DEGRADED` 结局的语义化枚举（8 个初始值：`EMPTY_INPUT` / `RATE_LIMITED` / `LOCK_TIMEOUT` / `PROVIDER_DISABLED` / `EXTERNAL_EMPTY_RESULT` / `EXTERNAL_FAILED` / `PARSE_FAILED` / `STRATEGY_CHAIN_EXHAUSTED`）。写入 `agent_logs.error_message` 供可观测性聚合。 | 仅后端可见；前端不感知                                |
+| **Agent Payload DTO** | `ResearchBundle` / `TitleCandidates` / `OutlineDraft` / `ContentDraft` / `ImageAnalyses` / `GeneratedImages` | 六个 Agent 各自的 readonly 产出 DTO，取代 `array<string, mixed>`。`ResearchBundle` 与 `articles.research_data` JSON 列双向映射。                                                                                                                               | 字段命名采用 camelCase；DB JSON 序列化仍为 snake_case |
 
 ## 状态机流转
 
@@ -86,3 +89,24 @@ backend/app/
 ```
 
 命名约束：Agent 名**不含 provider 名**（避免抽象被名字拆穿）。永远是 `TopicResearchAgent`，不是 `ExaResearchAgent`。
+
+## Agent 执行结局契约（ADR-0003）
+
+```
+AgentInterface::execute(array): AgentOutcome
+AgentInterface::executeStream(array): Generator<int, string, mixed, AgentOutcome>
+                                                                  ^^^^^^^^^^^^^
+                                                  流尾归一：$generator->getReturn()
+```
+
+三态语义：
+
+| Status     | 构造方   | payload                          | reason              | 典型场景                                                 |
+| ---------- | -------- | -------------------------------- | ------------------- | -------------------------------------------------------- |
+| `OK`       | Agent    | 完整 DTO                         | `null`              | 正常路径                                                 |
+| `DEGRADED` | Agent    | **仍为完整 DTO**（状态机不绕行） | `DegradationReason` | 限流 / 解析失败 / 上游降级                               |
+| `FAILED`   | 异常冒泡 | —                                | —                   | 核心能力失败；由 `WorkshopOrchestrator::markFailed` 收口 |
+
+**静默降级显式化**：`ImageAnalyzerAgent` 的 JSON 解析失败、`ParallelImageGenerator` 的 fallback_chain 全挂，过去对编排器不可见；新契约下必须构造 `AgentOutcome::degraded(...)`，`AgentLogAspect` 据此写 `agent_logs.status=degraded`，可观测性面板 `GROUP BY agent_name, status` 直接出降级率。
+
+**DTO ↔ DB 往返**：仅 `ResearchBundle` 需要与 `articles.research_data` JSON 列双向映射；`toArray()` 输出 snake_case 保持与历史数据兼容。

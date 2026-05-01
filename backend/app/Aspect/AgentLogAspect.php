@@ -6,6 +6,8 @@ namespace App\Aspect;
 
 use App\Annotation\AgentLog as AgentLogAnnotation;
 use App\Model\AgentLog;
+use App\Service\Agent\Outcome\AgentOutcome;
+use App\Service\Agent\Outcome\OutcomeStatus;
 use Generator;
 use Hyperf\Context\Context;
 use Hyperf\Contract\StdoutLoggerInterface;
@@ -19,6 +21,7 @@ use Throwable;
  *  - 记录开始时间 / 结束时间 / 耗时 duration_ms
  *  - 截取入参 / 返回值摘要
  *  - 捕获异常 → status=failed + error_message
+ *  - 识别 AgentOutcome 三态（ADR-0003）：OK → success；DEGRADED → degraded + reason/detail 记入 error_message
  *  - 从 Hyperf Context 读取 user_id 和 article_id 关联业务实体
  *
  * 设计原则：
@@ -55,7 +58,19 @@ class AgentLogAspect extends AbstractAspect
             /** @var mixed $result */
             $result = $proceedingJoinPoint->process();
 
-            if ($annotation->logOutput && ! ($result instanceof Generator)) {
+            // ADR-0003：识别 AgentOutcome 三态
+            if ($result instanceof AgentOutcome) {
+                if ($result->status === OutcomeStatus::DEGRADED) {
+                    $status = AgentLog::STATUS_DEGRADED;
+                    $reasonCode = $result->reason?->value ?? 'unknown';
+                    $detail = $result->detail !== null && $result->detail !== '' ? ': ' . $result->detail : '';
+                    $errorMessage = substr('[degraded:' . $reasonCode . ']' . $detail, 0, 1000);
+                }
+                // OK 结局：output_summary 用 payload 的 JSON 摘要
+                if ($annotation->logOutput) {
+                    $outputSummary = $this->summarize($result->payload, $annotation->maxSummaryLength);
+                }
+            } elseif ($annotation->logOutput && ! ($result instanceof Generator)) {
                 $outputSummary = $this->summarize($result, $annotation->maxSummaryLength);
             }
 

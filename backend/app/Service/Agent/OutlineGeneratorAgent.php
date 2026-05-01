@@ -9,6 +9,9 @@ use App\Constants\AgentPrompts;
 use App\Constants\Code;
 use App\Contract\AgentInterface;
 use App\Exception\BusinessException;
+use App\Service\Agent\Outcome\AgentOutcome;
+use App\Service\Agent\Outcome\Payload\OutlineDraft;
+use App\Service\Agent\Outcome\Payload\OutlineNode;
 use App\Service\ModelProviderService;
 use Generator;
 use Hyperf\Contract\StdoutLoggerInterface;
@@ -16,8 +19,7 @@ use Hyperf\Contract\StdoutLoggerInterface;
 /**
  * 大纲生成 Agent：根据已选标题生成结构化大纲。
  *
- * 输出格式：
- *   {markdown: string, nodes: [{id, text, level, parent_id}]}
+ * Payload：OutlineDraft。markdown 或 nodes 为空抛异常 → FAILED。
  */
 class OutlineGeneratorAgent extends AbstractAgent implements AgentInterface
 {
@@ -32,7 +34,7 @@ class OutlineGeneratorAgent extends AbstractAgent implements AgentInterface
     }
 
     #[AgentLog(name: 'outline_generator')]
-    public function execute(array $context): array
+    public function execute(array $context): AgentOutcome
     {
         $title = (string) ($context['title'] ?? '');
         $supplement = (string) ($context['supplement'] ?? '');
@@ -45,7 +47,6 @@ class OutlineGeneratorAgent extends AbstractAgent implements AgentInterface
             'supplement' => $supplement !== '' ? $supplement : '（无）',
         ]);
 
-        // Phase 3.5：research preamble 拼接（无研究资料回退为空串）
         $preamble = $this->buildResearchPreamble($context['research_data'] ?? null);
         $userPrompt = $preamble . $userPrompt;
 
@@ -73,23 +74,27 @@ class OutlineGeneratorAgent extends AbstractAgent implements AgentInterface
             if (! is_array($n) || empty($n['text'])) {
                 continue;
             }
-            $nodes[] = [
-                'id' => (int) ($n['id'] ?? count($nodes) + 1),
-                'text' => (string) $n['text'],
-                'level' => (int) ($n['level'] ?? 1),
-                'parent_id' => isset($n['parent_id']) && $n['parent_id'] !== null ? (int) $n['parent_id'] : null,
-            ];
+            $nodes[] = new OutlineNode(
+                id: (int) ($n['id'] ?? count($nodes) + 1),
+                text: (string) $n['text'],
+                level: (int) ($n['level'] ?? 1),
+                parentId: isset($n['parent_id']) && $n['parent_id'] !== null ? (int) $n['parent_id'] : null,
+            );
         }
 
-        return [
-            'markdown' => $markdown,
-            'nodes' => $nodes,
-        ];
+        if (empty($nodes)) {
+            throw new BusinessException(Code::WORKSHOP_AGENT_FAILED, 'outline has no valid nodes', 500);
+        }
+
+        return AgentOutcome::ok(new OutlineDraft(markdown: $markdown, nodes: $nodes));
     }
 
     public function executeStream(array $context): Generator
     {
-        $result = $this->execute($context);
-        yield json_encode($result, JSON_UNESCAPED_UNICODE);
+        $outcome = $this->execute($context);
+        /** @var OutlineDraft $payload */
+        $payload = $outcome->payload;
+        yield json_encode($payload->toArray(), JSON_UNESCAPED_UNICODE);
+        return $outcome;
     }
 }

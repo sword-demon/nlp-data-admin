@@ -7,6 +7,9 @@ namespace App\Service\Agent;
 use App\Annotation\AgentLog;
 use App\Constants\AgentPrompts;
 use App\Contract\AgentInterface;
+use App\Service\Agent\Outcome\AgentOutcome;
+use App\Service\Agent\Outcome\DegradationReason;
+use App\Service\Agent\Outcome\Payload\ResearchBundle;
 use App\Service\ModelProviderService;
 use App\Service\SearchProviderService;
 use Generator;
@@ -21,11 +24,12 @@ use Throwable;
  * 链路：缓存 → 单飞锁 → 令牌桶 → SearchProvider → LLM 浓缩 → 写缓存 → 返回
  *      ↓任一环节失败/超限/未启用 → 降级 (research_data=null, fallback=true)
  *
- * 输出契约（所有 slice 必须保持稳定）：
- *   [
- *     'research_data' => null | ['summary' => string, 'sources' => array<int, array>],
- *     'fallback'      => bool,  // true = 未取得有效研究资料，下游走基础模式
- *   ]
+ * 输出契约（ADR-0003）：
+ *   AgentOutcome(status, payload: ResearchBundle, reason?, detail?)
+ *     - OK       => ResearchBundle{summary, sources, fallback=false}
+ *     - DEGRADED => ResearchBundle::degradedEmpty(...) + DegradationReason
+ *   下游用 $outcome->payload->toJsonColumn() 写 articles.research_data（降级 => null），
+ *   用 ->toPreambleArray() 拼 preamble。
  *
  * 四道防线（详见 backend/CONTEXT.md "研究链路四道防线"）：
  *   1. Redis 缓存 24h —— 同选题秒级命中
@@ -63,11 +67,13 @@ class TopicResearchAgent extends AbstractAgent implements AgentInterface
     }
 
     #[AgentLog(name: 'topic_research')]
-    public function execute(array $context): array
+    public function execute(array $context): AgentOutcome
     {
         $topic = trim((string) ($context['topic'] ?? ''));
+        $defaultName = (string) $this->config->get('search.default', 'exa');
+
         if ($topic === '') {
-            return $this->fallback('empty topic');
+            return $this->degradedOutcome($topic, $defaultName, DegradationReason::EMPTY_INPUT, 'empty topic');
         }
 
         $cacheKey = self::CACHE_KEY_PREFIX . md5($topic);
@@ -76,19 +82,23 @@ class TopicResearchAgent extends AbstractAgent implements AgentInterface
         // 防线 1：缓存命中直接返回
         if ($cached = $this->readCache($cacheKey)) {
             $this->logger->info("[TopicResearchAgent] cache hit topic={$topic}");
-            return ['research_data' => $cached, 'fallback' => false];
+            return AgentOutcome::ok($this->bundleFromCache($topic, $defaultName, $cached));
         }
 
         // 全局开关 + Provider 可用性预检（任意一项不通过 → 直接降级，不消耗令牌桶）
-        $defaultName = (string) $this->config->get('search.default', 'exa');
         $providerCfg = (array) $this->config->get("search.providers.{$defaultName}", []);
         if (empty($providerCfg['enabled']) || empty($providerCfg['api_key'])) {
-            return $this->fallback("provider [{$defaultName}] disabled or missing api key");
+            return $this->degradedOutcome(
+                $topic,
+                $defaultName,
+                DegradationReason::PROVIDER_DISABLED,
+                "provider [{$defaultName}] disabled or missing api key",
+            );
         }
 
         // 防线 3：令牌桶（在拿锁前判，避免锁内排队）
         if (! $this->rateLimitPass()) {
-            return $this->fallback('rate limit exceeded');
+            return $this->degradedOutcome($topic, $defaultName, DegradationReason::RATE_LIMITED, 'token bucket exceeded');
         }
 
         // 防线 2：单飞锁。拿不到锁说明同选题正在被另一个请求计算，转为等待缓存
@@ -96,9 +106,9 @@ class TopicResearchAgent extends AbstractAgent implements AgentInterface
             $awaited = $this->waitForCache($cacheKey);
             if ($awaited !== null) {
                 $this->logger->info("[TopicResearchAgent] cache awaited topic={$topic}");
-                return ['research_data' => $awaited, 'fallback' => false];
+                return AgentOutcome::ok($this->bundleFromCache($topic, $defaultName, $awaited));
             }
-            return $this->fallback('lock contention timeout');
+            return $this->degradedOutcome($topic, $defaultName, DegradationReason::LOCK_TIMEOUT, 'wait-for-cache timed out');
         }
 
         try {
@@ -106,12 +116,12 @@ class TopicResearchAgent extends AbstractAgent implements AgentInterface
             $searchRes = $this->providers->driver($defaultName)->search($topic, []);
             $sources = (array) ($searchRes['results'] ?? []);
             if (empty($sources)) {
-                return $this->fallback('zero search results');
+                return $this->degradedOutcome($topic, $defaultName, DegradationReason::EXTERNAL_EMPTY_RESULT, 'zero search results');
             }
 
             $summary = $this->summarize($topic, $sources);
             if ($summary === '') {
-                return $this->fallback('summarize empty output');
+                return $this->degradedOutcome($topic, $defaultName, DegradationReason::EXTERNAL_EMPTY_RESULT, 'summarize empty output');
             }
 
             $data = ['summary' => $summary, 'sources' => $sources];
@@ -125,12 +135,24 @@ class TopicResearchAgent extends AbstractAgent implements AgentInterface
                 $defaultName
             ));
 
-            return ['research_data' => $data, 'fallback' => false];
+            return AgentOutcome::ok(new ResearchBundle(
+                topic: $topic,
+                provider: $defaultName,
+                queriedAt: date('c'),
+                summary: $summary,
+                sources: $sources,
+                fallback: false,
+            ));
         } catch (Throwable $e) {
             $this->logger->warning(
                 '[TopicResearchAgent] pipeline failed, degraded: ' . $e->getMessage()
             );
-            return $this->fallback('pipeline exception: ' . $e->getMessage());
+            return $this->degradedOutcome(
+                $topic,
+                $defaultName,
+                DegradationReason::EXTERNAL_FAILED,
+                'pipeline exception: ' . $e->getMessage(),
+            );
         } finally {
             $this->releaseLock($lockKey);
         }
@@ -138,8 +160,12 @@ class TopicResearchAgent extends AbstractAgent implements AgentInterface
 
     public function executeStream(array $context): Generator
     {
-        $result = $this->execute($context);
-        yield json_encode($result, JSON_UNESCAPED_UNICODE);
+        $outcome = $this->execute($context);
+        yield json_encode([
+            'status' => $outcome->status->value,
+            'fallback' => $outcome->isDegraded(),
+        ], JSON_UNESCAPED_UNICODE);
+        return $outcome;
     }
 
     /**
@@ -275,14 +301,40 @@ class TopicResearchAgent extends AbstractAgent implements AgentInterface
     }
 
     /**
-     * @return array{research_data: null, fallback: true}
+     * 统一降级出口：记日志 + 返回 DEGRADED 结局（payload 仍是完整 DTO，保证状态机不绕行）。
      */
-    private function fallback(string $reason): array
+    private function degradedOutcome(
+        string $topic,
+        string $provider,
+        DegradationReason $reason,
+        ?string $detail = null,
+    ): AgentOutcome {
+        $this->logger->info(sprintf(
+            '[TopicResearchAgent] fallback reason=%s detail=%s',
+            $reason->value,
+            $detail ?? '',
+        ));
+        return AgentOutcome::degraded(
+            ResearchBundle::degradedEmpty($topic, $provider),
+            $reason,
+            $detail,
+        );
+    }
+
+    /**
+     * 缓存中只存了 {summary, sources}，读出来时补齐 topic/provider/queriedAt 字段。
+     *
+     * @param array<string, mixed> $cached
+     */
+    private function bundleFromCache(string $topic, string $provider, array $cached): ResearchBundle
     {
-        $this->logger->info("[TopicResearchAgent] fallback: {$reason}");
-        return [
-            'research_data' => null,
-            'fallback' => true,
-        ];
+        return new ResearchBundle(
+            topic: $topic,
+            provider: $provider,
+            queriedAt: date('c'),
+            summary: (string) ($cached['summary'] ?? ''),
+            sources: (array) ($cached['sources'] ?? []),
+            fallback: false,
+        );
     }
 }

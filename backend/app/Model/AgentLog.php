@@ -10,6 +10,7 @@ class AgentLog extends Model
 {
     public const STATUS_RUNNING = 'running';
     public const STATUS_SUCCESS = 'success';
+    public const STATUS_DEGRADED = 'degraded';
     public const STATUS_FAILED = 'failed';
 
     protected ?string $table = 'agent_logs';

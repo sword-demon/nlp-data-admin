@@ -11,6 +11,13 @@ use App\Model\Article;
 use App\Service\Agent\ContentGeneratorAgent;
 use App\Service\Agent\ImageAnalyzerAgent;
 use App\Service\Agent\OutlineGeneratorAgent;
+use App\Service\Agent\Outcome\AgentOutcome;
+use App\Service\Agent\Outcome\Payload\ContentDraft;
+use App\Service\Agent\Outcome\Payload\GeneratedImages;
+use App\Service\Agent\Outcome\Payload\ImageAnalyses;
+use App\Service\Agent\Outcome\Payload\OutlineDraft;
+use App\Service\Agent\Outcome\Payload\ResearchBundle;
+use App\Service\Agent\Outcome\Payload\TitleCandidates;
 use App\Service\Agent\ParallelImageGenerator;
 use App\Service\Agent\TitleGeneratorAgent;
 use App\Service\Agent\TopicResearchAgent;
@@ -79,12 +86,14 @@ class WorkshopOrchestrator
 
         $researchFallback = true;
         try {
-            $researchResult = $this->topicResearch->execute(['topic' => $topic]);
-            $article->research_data = $researchResult['research_data'] ?? null;
-            $researchFallback = (bool) ($researchResult['fallback'] ?? true);
+            $researchOutcome = $this->topicResearch->execute(['topic' => $topic]);
+            /** @var ResearchBundle $bundle */
+            $bundle = $researchOutcome->payload;
+            $article->research_data = $bundle->toJsonColumn();
+            $researchFallback = $researchOutcome->isDegraded();
             $article->save();
         } catch (Throwable $e) {
-            // 研究失败不阻塞主链路（ADR 0001）
+            // 理论上 TopicResearchAgent 已将除 FAILED 外的所有异常收编为 DEGRADED；此处保留兜底。
             $this->logger->warning(
                 "[Workshop#{$article->getKey()}] topic research exception, degraded: {$e->getMessage()}"
             );
@@ -97,7 +106,7 @@ class WorkshopOrchestrator
         $this->transitionTo($article, WorkshopState::TITLE_GENERATING);
 
         try {
-            $result = $this->titleAgent->execute([
+            $titleOutcome = $this->titleAgent->execute([
                 'topic' => $topic,
                 'style' => $style,
                 'research_data' => $article->research_data,
@@ -107,8 +116,9 @@ class WorkshopOrchestrator
             throw $e;
         }
 
-        /** @var array<int, array<string, mixed>> $titles */
-        $titles = $result['titles'];
+        /** @var TitleCandidates $titlesPayload */
+        $titlesPayload = $titleOutcome->payload;
+        $titles = $titlesPayload->toArray();
         $article->generated_titles = $titles;
         $article->save();
 
@@ -150,7 +160,7 @@ class WorkshopOrchestrator
         $this->transitionTo($article, WorkshopState::OUTLINE_GENERATING);
 
         try {
-            $result = $this->outlineAgent->execute([
+            $outlineOutcome = $this->outlineAgent->execute([
                 'title' => $selected,
                 'supplement' => $supplement,
                 'research_data' => $article->research_data,
@@ -160,12 +170,15 @@ class WorkshopOrchestrator
             throw $e;
         }
 
-        $article->outline = $result;
+        /** @var OutlineDraft $outlineDraft */
+        $outlineDraft = $outlineOutcome->payload;
+        $outlineArr = $outlineDraft->toArray();
+        $article->outline = $outlineArr;
         $article->save();
 
         $this->transitionTo($article, WorkshopState::OUTLINE_EDITING);
 
-        return ['outline' => $result];
+        return ['outline' => $outlineArr];
     }
 
     /**
@@ -204,6 +217,7 @@ class WorkshopOrchestrator
 
         $outline = (array) ($article->outline ?? []);
         $content = '';
+        $placeholders = [];
         try {
             $generator = $this->contentAgent->executeStream([
                 'title' => (string) $article->selected_title,
@@ -216,6 +230,13 @@ class WorkshopOrchestrator
                 $content .= $chunk;
                 $this->sse->broadcastContentChunk($stream, $chunk);
             }
+            /** @var AgentOutcome $contentOutcome */
+            $contentOutcome = $generator->getReturn();
+            /** @var ContentDraft $draft */
+            $draft = $contentOutcome->payload;
+            // 以归一返回值为准：覆盖聚合值，取 DTO 内的 placeholder 对象数组
+            $content = $draft->content;
+            $placeholders = $draft->placeholdersAsArray();
         } catch (Throwable $e) {
             $this->markFailed($article, $e->getMessage());
             $this->sse->broadcastError($stream, $e->getMessage(), $this->contentAgent->getName());
@@ -223,7 +244,6 @@ class WorkshopOrchestrator
             return;
         }
 
-        $placeholders = $this->contentAgent->extractPlaceholders($content);
         $article->content = $content;
         $article->word_count = mb_strlen($content);
         $article->save();
@@ -238,7 +258,7 @@ class WorkshopOrchestrator
         $this->sse->broadcastStateChange($stream, WorkshopState::IMAGE_ANALYZING);
 
         try {
-            $analyzeResult = $this->imageAnalyzer->execute([
+            $analyzeOutcome = $this->imageAnalyzer->execute([
                 'content' => $content,
                 'placeholders' => $placeholders,
                 'research_data' => $article->research_data,
@@ -250,15 +270,18 @@ class WorkshopOrchestrator
             return;
         }
 
-        $this->sse->broadcast($stream, 'image_analyzed', $analyzeResult);
+        /** @var ImageAnalyses $analysesPayload */
+        $analysesPayload = $analyzeOutcome->payload;
+        $analyses = $analysesPayload->toArray();
+        $this->sse->broadcast($stream, 'image_analyzed', ['analyses' => $analyses]);
 
-        // === 阶段 3c：并行配图（Phase 3 占位） ===
+        // === 阶段 3c：并行配图（Phase 3 占位）===
         $this->transitionTo($article, WorkshopState::IMAGE_GENERATING);
         $this->sse->broadcastStateChange($stream, WorkshopState::IMAGE_GENERATING);
 
         try {
-            $imageResult = $this->imageGenerator->execute([
-                'analyses' => $analyzeResult['analyses'],
+            $imageOutcome = $this->imageGenerator->execute([
+                'analyses' => $analyses,
             ]);
         } catch (Throwable $e) {
             $this->markFailed($article, $e->getMessage());
@@ -267,7 +290,9 @@ class WorkshopOrchestrator
             return;
         }
 
-        $images = (array) ($imageResult['images'] ?? []);
+        /** @var GeneratedImages $imagesPayload */
+        $imagesPayload = $imageOutcome->payload;
+        $images = $imagesPayload->toArray();
 
         // 将正文中的 placeholder://image/N 替换为真实 Markdown 图片
         $replacedContent = $this->replaceImagePlaceholders($content, $images);
