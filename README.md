@@ -6,7 +6,8 @@
 
 ## ✨ 核心特性
 
-- **🧠 多 Agent 编排**：TitleGenerator · OutlineGenerator · ContentGenerator · ImageAnalyzer · ParallelImageGenerator 五环节流水线
+- **🧠 多 Agent 编排**：TopicResearch · TitleGenerator · OutlineGenerator · ContentGenerator · ImageAnalyzer · ParallelImageGenerator 六环节流水线
+- **🔎 选题背景研究**：Exa neural 搜索 + LLM 五段式事实清单（核心概念/关键事实/观点分歧/可引用数据/信息缺口），带缓存+单飞锁+令牌桶+用户配额四道防线，资料自动注入下游 4 Agent
 - **✍️ Human-in-the-loop 创作工坊**：AI 生成标题你来选 → AI 生成大纲你可改 → AI 流式写正文可实时预览
 - **🖼️ 6 种智能配图**：Pexels 真实图库 / Mermaid 流程图 / Iconify 图标 / Emoji / SVG 概念图 / AI 生图（Nano Banana）
 - **⚡ 实时 SSE 流式**：边写边看的 Markdown，带 highlight.js 代码高亮，无刷新预览
@@ -72,6 +73,18 @@ docker compose up -d
 # 前端（Vite 热更新）:  http://localhost:5173
 # 后端（挂载源码）:    http://localhost:9501
 ```
+
+## 🎬 创作工坊体验
+
+从选题到配图的 5 步完整流程（以「人形机器人产业现状与瓶颈」为例，研究资料已注入至候选标题/大纲/正文，含 `86.9% 出货量`、`70% 国产化率`、`宇树 H1`、`Atlas` 等精确行业数据与对标对象）：
+
+| 步骤                       | 截图                                                        |
+| -------------------------- | ----------------------------------------------------------- |
+| ① 候选标题（研究注入生效） | ![候选标题](./docs/images/step1-candidate-titles.png)       |
+| ② AI 生成大纲              | ![AI 生成大纲](./docs/images/step2-outline-generated.png)   |
+| ③ SSE 流式生成正文         | ![流式生成正文](./docs/images/step3-generating-content.png) |
+| ④ 正文完成                 | ![正文完成](./docs/images/step4-full-content-generated.png) |
+| ⑤ 配图完成（完整工作流）   | ![完整工作流](./docs/images/step5-complete-workflow.png)    |
 
 ## 🗂️ 项目结构
 
@@ -151,6 +164,7 @@ npx vue-tsc -b      # 类型检查
 - [x] Phase 6 可观测性（AgentLog + AOP + Dashboard）
 - [x] Phase 7 前端全流程联调（创作工坊 UI + Dashboard + 我的文章 + 个人中心）
 - [x] Phase 8 部署与文档（Nginx SSE + 多阶段镜像 + 一键 `docker compose up`）
+- [x] Topic Research Agent（Exa 搜索 + LLM 浓缩 + 四道防线 + 下游 4 Agent 注入 + 前端降级提示）
 
 ## 📄 License
 
