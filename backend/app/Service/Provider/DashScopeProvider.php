@@ -141,6 +141,68 @@ class DashScopeProvider implements ModelProviderInterface
         }
     }
 
+    public function chatWithTools(string $prompt, array $messages, array $tools, array $options = []): array
+    {
+        $this->assertApiKey();
+
+        try {
+            $client = $this->makeClient(false);
+            $payload = $this->buildPayload($prompt, $messages, $options, false);
+
+            // 添加 tools 参数（DashScope 兼容 OpenAI 格式）
+            $payload['parameters']['tools'] = $tools;
+
+            $response = $client->post($this->endpoint(), [
+                'json' => $payload,
+                'headers' => $this->buildHeaders(false),
+            ]);
+
+            $body = $response->getBody()->getContents();
+            $data = json_decode($body, true);
+
+            if (! is_array($data)) {
+                throw new BusinessException(
+                    Code::AI_PROVIDER_ERROR,
+                    'DashScope returned non-JSON response: ' . substr((string) $body, 0, 200),
+                    502
+                );
+            }
+
+            // 提取 message 字段
+            $message = $data['output']['choices'][0]['message'] ?? null;
+            if (! is_array($message)) {
+                throw new BusinessException(
+                    Code::AI_PROVIDER_ERROR,
+                    'DashScope response missing message field: ' . json_encode($data, JSON_UNESCAPED_UNICODE),
+                    502
+                );
+            }
+
+            // 返回标准化格式
+            return [
+                'content' => $message['content'] ?? null,
+                'tool_calls' => $message['tool_calls'] ?? null,
+            ];
+        } catch (GuzzleException $e) {
+            throw new BusinessException(
+                Code::AI_PROVIDER_ERROR,
+                'DashScope API call failed: ' . $e->getMessage(),
+                502,
+                $e
+            );
+        } catch (Throwable $e) {
+            if ($e instanceof BusinessException) {
+                throw $e;
+            }
+            throw new BusinessException(
+                Code::AI_PROVIDER_ERROR,
+                'DashScope error: ' . $e->getMessage(),
+                502,
+                $e
+            );
+        }
+    }
+
     // ---------- internals ----------
 
     private function endpoint(): string
