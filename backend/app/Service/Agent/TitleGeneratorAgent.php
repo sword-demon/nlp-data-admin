@@ -42,6 +42,13 @@ class TitleGeneratorAgent extends AbstractAgent implements AgentInterface
             throw new BusinessException(Code::WORKSHOP_AGENT_FAILED, 'topic is required', 422);
         }
 
+        // 尝试从缓存读取
+        $cacheKey = $this->buildCacheKey($context);
+        if ($cached = $this->getCachedOutcome($cacheKey)) {
+            $this->logger->info("[TitleGeneratorAgent] cache hit for key: $cacheKey");
+            return $cached;
+        }
+
         $userPrompt = $this->render(AgentPrompts::TITLE_USER_TPL, [
             'topic' => $topic,
             'style' => $style,
@@ -102,13 +109,18 @@ class TitleGeneratorAgent extends AbstractAgent implements AgentInterface
             );
 
             // 如果有 tool_calls，解析结构化数据；否则降级回正则解析
+            $outcome = null;
             if ($result['tool_calls'] !== null && count($result['tool_calls']) > 0) {
-                return $this->parseToolCallsResponse($result['tool_calls']);
+                $outcome = $this->parseToolCallsResponse($result['tool_calls']);
             } else {
                 // 降级回纯文本 + 正则解析
                 $this->logger->info('[TitleGeneratorAgent] no tool_calls, fallback to text parsing');
-                return $this->parseTextResponse($result['content']);
+                $outcome = $this->parseTextResponse($result['content']);
             }
+
+            // 写入缓存后返回
+            $this->setCachedOutcome($cacheKey, $outcome);
+            return $outcome;
         } catch (\Throwable $e) {
             $this->logger->error('[TitleGeneratorAgent] Function Calling failed: ' . $e->getMessage());
             throw new BusinessException(Code::WORKSHOP_AGENT_FAILED, 'title generation failed: ' . $e->getMessage(), 500, $e);
