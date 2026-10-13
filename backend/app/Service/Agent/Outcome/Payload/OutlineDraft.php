@@ -38,4 +38,26 @@ final class OutlineDraft
             'nodes' => array_map(static fn(OutlineNode $n) => $n->toArray(), $this->nodes),
         ];
     }
+
+    /**
+     * 从数组创建实例
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+        $nodesData = (array) ($data['nodes'] ?? []);
+        $nodes = [];
+
+        foreach ($nodesData as $item) {
+            if (is_array($item)) {
+                $nodes[] = OutlineNode::fromArray($item);
+            }
+        }
+
+        return new self(
+            markdown: (string) ($data['markdown'] ?? ''),
+            nodes: $nodes,
+        );
+    }
 }

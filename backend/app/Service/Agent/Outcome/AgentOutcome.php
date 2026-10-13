@@ -67,4 +67,64 @@ final class AgentOutcome
     {
         return $this->status === OutcomeStatus::DEGRADED;
     }
+
+    /**
+     * 转换为数组（用于缓存序列化）
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray(): array
+    {
+        $payloadArray = [];
+        if (method_exists($this->payload, 'toArray')) {
+            $payloadArray = $this->payload->toArray();
+        }
+
+        return [
+            'status' => $this->status->value,
+            'payload_class' => $this->payload::class,
+            'payload_data' => $payloadArray,
+            'reason' => $this->reason?->value,
+            'detail' => $this->detail,
+        ];
+    }
+
+    /**
+     * 从数组创建实例（用于缓存反序列化）
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+        $status = OutcomeStatus::tryFrom((string) ($data['status'] ?? 'OK')) ?? OutcomeStatus::OK;
+        $payloadClass = (string) ($data['payload_class'] ?? '');
+        $payloadData = (array) ($data['payload_data'] ?? []);
+
+        // 反序列化 payload
+        $payload = null;
+        if ($payloadClass !== '' && class_exists($payloadClass)) {
+            if (method_exists($payloadClass, 'fromArray')) {
+                $payload = $payloadClass::fromArray($payloadData);
+            }
+        }
+
+        // 降级为空对象
+        if ($payload === null) {
+            $payload = (object)[];
+        }
+
+        // 反序列化 reason
+        $reason = null;
+        if (! empty($data['reason'])) {
+            $reason = DegradationReason::tryFrom((string) $data['reason']);
+        }
+
+        if ($status === OutcomeStatus::OK) {
+            return self::ok($payload);
+        } elseif ($status === OutcomeStatus::DEGRADED && $reason !== null) {
+            return self::degraded($payload, $reason, $data['detail'] ?? null);
+        } else {
+            return self::ok($payload);
+        }
+    }
 }

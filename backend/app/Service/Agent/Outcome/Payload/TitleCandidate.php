@@ -23,4 +23,18 @@ final class TitleCandidate
             'score' => $this->score,
         ];
     }
+
+    /**
+     * 从数组创建实例
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            title: (string) ($data['title'] ?? ''),
+            analysis: (string) ($data['analysis'] ?? ''),
+            score: (int) ($data['score'] ?? 0),
+        );
+    }
 }

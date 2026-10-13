@@ -26,4 +26,39 @@ final class ContentDraft
     {
         return array_map(static fn(Placeholder $p) => $p->toArray(), $this->placeholders);
     }
+
+    /**
+     * 从数组创建实例
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+        $placeholdersData = (array) ($data['placeholders'] ?? []);
+        $placeholders = [];
+
+        foreach ($placeholdersData as $item) {
+            if (is_array($item)) {
+                $placeholders[] = Placeholder::fromArray($item);
+            }
+        }
+
+        return new self(
+            content: (string) ($data['content'] ?? ''),
+            placeholders: $placeholders,
+            wordCount: (int) ($data['word_count'] ?? 0),
+        );
+    }
+
+    /**
+     * toArray() 用于序列化
+     */
+    public function toArray(): array
+    {
+        return [
+            'content' => $this->content,
+            'placeholders' => $this->placeholdersAsArray(),
+            'word_count' => $this->wordCount,
+        ];
+    }
 }

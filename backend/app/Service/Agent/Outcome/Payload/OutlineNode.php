@@ -25,4 +25,19 @@ final class OutlineNode
             'parent_id' => $this->parentId,
         ];
     }
+
+    /**
+     * 从数组创建实例
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            id: (int) ($data['id'] ?? 0),
+            text: (string) ($data['text'] ?? ''),
+            level: (int) ($data['level'] ?? 1),
+            parentId: isset($data['parent_id']) && $data['parent_id'] !== null ? (int) $data['parent_id'] : null,
+        );
+    }
 }

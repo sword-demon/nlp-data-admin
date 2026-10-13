@@ -32,4 +32,22 @@ final class TitleCandidates
     {
         return array_map(static fn(TitleCandidate $t) => $t->toArray(), $this->titles);
     }
-}
+
+    /**
+     * 从数组创建实例
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+        $titlesData = (array) ($data['titles'] ?? $data ?? []);
+        $titles = [];
+
+        foreach ($titlesData as $item) {
+            if (is_array($item)) {
+                $titles[] = TitleCandidate::fromArray($item);
+            }
+        }
+
+        return new self($titles);
+    }
