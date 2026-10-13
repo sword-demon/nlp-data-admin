@@ -6,6 +6,9 @@ namespace App\Service\Agent;
 
 use App\Constants\Code;
 use App\Exception\BusinessException;
+use App\Service\Agent\Outcome\AgentOutcome;
+use Hyperf\Context\ApplicationContext;
+use Hyperf\Redis\Redis;
 
 /**
  * Agent 共用工具：prompt 模板渲染 + 鲁棒 JSON 解析。
@@ -106,4 +109,87 @@ abstract class AbstractAgent
 
         return $decoded;
     }
-}
+
+    /**
+     * 构建缓存 key
+     *
+     * 格式: agent:cache:{agent_name}:{md5(json_encode(normalized_context))}
+     * 排除 user_id/request_id/timestamp 等字段以避免缓存碎片化
+     *
+     * @param array<string, mixed> $context
+     */
+    protected function buildCacheKey(array $context): string
+    {
+        // 规范化 context：排除非语义字段
+        $normalized = [];
+        $excludeKeys = ['user_id', 'request_id', 'timestamp', 'created_at', 'updated_at'];
+
+        foreach ($context as $key => $value) {
+            if (! in_array($key, $excludeKeys, true)) {
+                $normalized[$key] = $value;
+            }
+        }
+
+        // 排序 keys 保证一致性
+        ksort($normalized);
+
+        // 生成 key
+        $hash = md5(json_encode($normalized, JSON_UNESCAPED_UNICODE));
+        $agentName = $this->getName();
+
+        return "agent:cache:{$agentName}:{$hash}";
+    }
+
+    /**
+     * 从缓存读取 AgentOutcome
+     *
+     * @return AgentOutcome|null
+     */
+    protected function getCachedOutcome(string $cacheKey): ?AgentOutcome
+    {
+        try {
+            if (! ApplicationContext::hasContainer()) {
+                return null;
+            }
+
+            $redis = ApplicationContext::getContainer()->get(Redis::class);
+            $cached = $redis->get($cacheKey);
+
+            if ($cached === null || $cached === false) {
+                return null;
+            }
+
+            $data = json_decode((string) $cached, true);
+            if (! is_array($data)) {
+                return null;
+            }
+
+            // 反序列化 AgentOutcome
+            return AgentOutcome::fromArray($data);
+        } catch (\Throwable $e) {
+            // 缓存读取异常时返回 null，不影响主流程
+            return null;
+        }
+    }
+
+    /**
+     * 写入缓存
+     *
+     * @param string $cacheKey
+     * @param AgentOutcome $outcome
+     * @param int $ttl TTL 秒数，默认 300 秒（5 分钟）
+     */
+    protected function setCachedOutcome(string $cacheKey, AgentOutcome $outcome, int $ttl = 300): void
+    {
+        try {
+            if (! ApplicationContext::hasContainer()) {
+                return;
+            }
+
+            $redis = ApplicationContext::getContainer()->get(Redis::class);
+            $cached = json_encode($outcome->toArray(), JSON_UNESCAPED_UNICODE);
+            $redis->setex($cacheKey, $ttl, $cached);
+        } catch (\Throwable $e) {
+            // 缓存写入异常时忽略，不影响主流程
+        }
+    }
