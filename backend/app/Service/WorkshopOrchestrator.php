@@ -11,11 +11,13 @@ use App\Model\Article;
 use App\Service\Agent\ContentGeneratorAgent;
 use App\Service\Agent\ImageAnalyzerAgent;
 use App\Service\Agent\OutlineGeneratorAgent;
+use App\Service\Agent\ReflectionAgent;
 use App\Service\Agent\Outcome\AgentOutcome;
 use App\Service\Agent\Outcome\Payload\ContentDraft;
 use App\Service\Agent\Outcome\Payload\GeneratedImages;
 use App\Service\Agent\Outcome\Payload\ImageAnalyses;
 use App\Service\Agent\Outcome\Payload\OutlineDraft;
+use App\Service\Agent\Outcome\Payload\ReflectionPayload;
 use App\Service\Agent\Outcome\Payload\ResearchBundle;
 use App\Service\Agent\Outcome\Payload\TitleCandidates;
 use App\Service\Agent\ParallelImageGenerator;
@@ -47,6 +49,7 @@ class WorkshopOrchestrator
         private readonly TitleGeneratorAgent $titleAgent,
         private readonly OutlineGeneratorAgent $outlineAgent,
         private readonly ContentGeneratorAgent $contentAgent,
+        private readonly ReflectionAgent $reflectionAgent,
         private readonly ImageAnalyzerAgent $imageAnalyzer,
         private readonly ParallelImageGenerator $imageGenerator,
         private readonly SseBroadcaster $sse,
@@ -253,7 +256,53 @@ class WorkshopOrchestrator
             'placeholder_count' => count($placeholders),
         ]);
 
-        // === 阶段 3b：配图分析 ===
+        // === 阶段 3b：内容评审（ReflectionAgent） ===
+        $reflectionPassed = $this->performReflection($article, $stream, $content);
+
+        // 如果评审不通过，触发一次重写
+        if (! $reflectionPassed) {
+            $this->logger->info("[Workshop#{$article->getKey()}] reflection failed, triggering rewrite");
+            $this->sse->broadcast($stream, 'reflection_rewrite_triggered', []);
+
+            try {
+                $content = '';
+                $placeholders = [];
+                $generator = $this->contentAgent->executeStream([
+                    'title' => (string) $article->selected_title,
+                    'style' => (string) $article->style,
+                    'supplement' => (string) $article->title_supplement,
+                    'outline_markdown' => (string) ($outline['markdown'] ?? ''),
+                    'research_data' => $article->research_data,
+                ]);
+                foreach ($generator as $chunk) {
+                    $content .= $chunk;
+                    $this->sse->broadcastContentChunk($stream, $chunk);
+                }
+                /** @var AgentOutcome $contentOutcome */
+                $contentOutcome = $generator->getReturn();
+                /** @var ContentDraft $draft */
+                $draft = $contentOutcome->payload;
+                $content = $draft->content;
+                $placeholders = $draft->placeholdersAsArray();
+
+                $article->content = $content;
+                $article->word_count = mb_strlen($content);
+                $article->save();
+
+                $this->sse->broadcast($stream, 'content_completed', [
+                    'word_count' => mb_strlen($content),
+                    'placeholder_count' => count($placeholders),
+                ]);
+
+                // 重写后再次评审（不再重写）
+                $this->performReflection($article, $stream, $content);
+            } catch (Throwable $e) {
+                $this->logger->warning("[Workshop#{$article->getKey()}] rewrite failed, continuing: {$e->getMessage()}");
+                $this->sse->broadcast($stream, 'reflection_rewrite_failed', ['error' => $e->getMessage()]);
+            }
+        }
+
+        // === 阶段 3c：配图分析 ===
         $this->transitionTo($article, WorkshopState::IMAGE_ANALYZING);
         $this->sse->broadcastStateChange($stream, WorkshopState::IMAGE_ANALYZING);
 
@@ -399,5 +448,39 @@ class WorkshopOrchestrator
             $content = preg_replace($pattern, $markdown, $content) ?? $content;
         }
         return $content;
+    }
+
+    /**
+     * 执行内容评审，返回是否通过。
+     *
+     * @return bool 评审是否通过
+     */
+    private function performReflection(Article $article, EventStream $stream, string $content): bool
+    {
+        $this->sse->broadcast($stream, 'reflection_started', []);
+
+        try {
+            $reflectionOutcome = $this->reflectionAgent->execute([
+                'title' => (string) $article->selected_title,
+                'content' => $content,
+            ]);
+
+            /** @var ReflectionPayload $reflection */
+            $reflection = $reflectionOutcome->payload;
+
+            $this->sse->broadcast($stream, 'reflection_completed', [
+                'scores' => $reflection->scores,
+                'suggestions' => $reflection->suggestions,
+                'average_score' => $reflection->averageScore,
+                'passed' => $reflection->passed(),
+            ]);
+
+            return $reflection->passed();
+        } catch (Throwable $e) {
+            $this->logger->warning("[Workshop#{$article->getKey()}] reflection failed, skipping: {$e->getMessage()}");
+            $this->sse->broadcast($stream, 'reflection_error', ['error' => $e->getMessage()]);
+            // 异常时跳过评审，继续配图
+            return true;
+        }
     }
 }
