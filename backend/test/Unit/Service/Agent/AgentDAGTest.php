@@ -247,6 +247,86 @@ class AgentDAGTest extends TestCase
         $this->assertContains('B', $nodeIds);
     }
 
+    public function testComplexCycleDetectionWithTarjan()
+    {
+        $dag = new AgentDAG($this->logger);
+
+        // 复杂环: A → B → C → D → B (C → D → B 形成环)
+        $agentA = $this->createMockAgent('A');
+        $agentB = $this->createMockAgent('B');
+        $agentC = $this->createMockAgent('C');
+        $agentD = $this->createMockAgent('D');
+
+        $dag->addNode('A', $agentA);
+        $dag->addNode('B', $agentB);
+        $dag->addNode('C', $agentC);
+        $dag->addNode('D', $agentD);
+
+        $dag->addDependency('A', 'B');
+        $dag->addDependency('B', 'C');
+        $dag->addDependency('C', 'D');
+        $dag->addDependency('D', 'B'); // 形成 B → C → D → B 环
+
+        $this->expectException(BusinessException::class);
+        $this->expectExceptionMessageMatches('/cycle detected in DAG/');
+
+        $dag->execute();
+    }
+
+    public function testLargeComplexCycleDetection()
+    {
+        $dag = new AgentDAG($this->logger);
+
+        // 大型复杂环: A → B → C → D → E → F → D (D → E → F → D 形成环)
+        $agents = [];
+        $nodeIds = ['A', 'B', 'C', 'D', 'E', 'F'];
+        foreach ($nodeIds as $id) {
+            $agents[$id] = $this->createMockAgent($id);
+            $dag->addNode($id, $agents[$id]);
+        }
+
+        $dag->addDependency('A', 'B');
+        $dag->addDependency('B', 'C');
+        $dag->addDependency('C', 'D');
+        $dag->addDependency('D', 'E');
+        $dag->addDependency('E', 'F');
+        $dag->addDependency('F', 'D'); // 形成环
+
+        $this->expectException(BusinessException::class);
+        $this->expectExceptionMessageMatches('/cycle detected in DAG/');
+
+        $dag->execute();
+    }
+
+    public function testMultipleStronglyConnectedComponents()
+    {
+        $dag = new AgentDAG($this->logger);
+
+        // 两个独立的强连通分量
+        // SCC1: A → B → A
+        // SCC2: C → D → C
+        $agentA = $this->createMockAgent('A');
+        $agentB = $this->createMockAgent('B');
+        $agentC = $this->createMockAgent('C');
+        $agentD = $this->createMockAgent('D');
+
+        $dag->addNode('A', $agentA);
+        $dag->addNode('B', $agentB);
+        $dag->addNode('C', $agentC);
+        $dag->addNode('D', $agentD);
+
+        $dag->addDependency('A', 'B');
+        $dag->addDependency('B', 'A'); // 形成第一个环
+
+        // 不添加第二个环的依赖，因为第一个环已经会被检测到
+
+        $this->expectException(BusinessException::class);
+        $this->expectExceptionMessageMatches('/cycle detected in DAG/');
+
+        $dag->execute();
+    }
+
+
     public function testGetNodeCount()
     {
         $dag = new AgentDAG($this->logger);

@@ -101,13 +101,16 @@ class AgentDAG
      */
     public function execute(): array
     {
-        // 1. DFS 环检测
+        // 1. DFS 环检测（快速失败）
         $this->detectCycle();
 
-        // 2. Kahn 拓扑排序 + 分层
+        // 2. Tarjan 强连通分量检测（双重保障）
+        $this->detectStronglyConnectedComponents();
+
+        // 3. Kahn 拓扑排序 + 分层
         $layers = $this->topologicalSort();
 
-        // 3. 分层并行执行
+        // 4. 分层并行执行
         return $this->executeLayered($layers);
     }
 
@@ -171,6 +174,85 @@ class AgentDAG
         $cycle = array_slice($path, $startIndex);
         $cycle[] = $cycleStart;
         return $cycle;
+    }
+
+    /**
+     * Tarjan 算法检测强连通分量（SCC）
+     *
+     * 如果存在大小 > 1 的 SCC，说明存在环
+     * 这是 DFS 后向边检测的补充验证
+     */
+    private function detectStronglyConnectedComponents(): void
+    {
+        $index = 0;
+        $stack = [];
+        $indices = [];
+        $lowLinks = [];
+        $onStack = [];
+
+        foreach (array_keys($this->nodes) as $node) {
+            if (! isset($indices[$node])) {
+                $this->tarjanDfs(
+                    $node,
+                    $index,
+                    $stack,
+                    $indices,
+                    $lowLinks,
+                    $onStack
+                );
+            }
+        }
+    }
+
+    /**
+     * Tarjan DFS 递归
+     *
+     * @param array<int, string> $stack
+     * @param array<string, int> $indices
+     * @param array<string, int> $lowLinks
+     * @param array<string, bool> $onStack
+     */
+    private function tarjanDfs(
+        string $node,
+        int &$index,
+        array &$stack,
+        array &$indices,
+        array &$lowLinks,
+        array &$onStack
+    ): void {
+        $indices[$node] = $index;
+        $lowLinks[$node] = $index;
+        ++$index;
+        $stack[] = $node;
+        $onStack[$node] = true;
+
+        foreach ($this->adjacency[$node] as $neighbor) {
+            if (! isset($indices[$neighbor])) {
+                $this->tarjanDfs($neighbor, $index, $stack, $indices, $lowLinks, $onStack);
+                $lowLinks[$node] = min($lowLinks[$node], $lowLinks[$neighbor]);
+            } elseif (isset($onStack[$neighbor]) && $onStack[$neighbor]) {
+                $lowLinks[$node] = min($lowLinks[$node], $indices[$neighbor]);
+            }
+        }
+
+        // 如果 node 是 SCC 的根
+        if ($lowLinks[$node] === $indices[$node]) {
+            $scc = [];
+            do {
+                $w = array_pop($stack);
+                unset($onStack[$w]);
+                $scc[] = $w;
+            } while ($w !== $node);
+
+            // 如果 SCC 大小 > 1，说明存在环
+            if (count($scc) > 1) {
+                throw new BusinessException(
+                    Code::WORKSHOP_AGENT_FAILED,
+                    'cycle detected in DAG (SCC): ' . implode(' ↔ ', array_reverse($scc)),
+                    422
+                );
+            }
+        }
     }
 
     /**

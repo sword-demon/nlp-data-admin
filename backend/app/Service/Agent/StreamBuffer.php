@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Service\Agent;
 
 use Swoole\Coroutine\Channel;
+use Swoole\Lock;
 
 /**
  * 协程安全流式缓冲区
@@ -16,6 +17,10 @@ use Swoole\Coroutine\Channel;
  *
  * 使用场景:
  * ContentGenerator 流式输出 50% 时触发 ImageAnalyzer 并行分析
+ *
+ * 并发安全:
+ * - 使用 Swoole\Lock 保护 subscribers 数组的并发访问
+ * - 确保 subscribe() 和 checkSubscribers() 的原子性
  */
 class StreamBuffer
 {
@@ -34,10 +39,14 @@ class StreamBuffer
     /** @var bool 是否已关闭 */
     private bool $closed = false;
 
+    /** @var Lock 互斥锁保护共享状态 */
+    private Lock $lock;
+
     public function __construct(int $estimatedTotal = 1000, int $bufferSize = 64)
     {
         $this->estimatedTotal = max(1, $estimatedTotal);
         $this->channel = new Channel($bufferSize);
+        $this->lock = new Lock(SWOOLE_MUTEX);
     }
 
     /**
@@ -66,19 +75,35 @@ class StreamBuffer
     public function subscribe(float $threshold, callable $callback): void
     {
         $threshold = max(0.0, min(1.0, $threshold));
-        $this->subscribers[] = [
-            'threshold' => $threshold,
-            'callback' => $callback,
-            'triggered' => false,
-        ];
 
-        // 按阈值排序，方便按序触发
-        usort($this->subscribers, fn($a, $b) => $a['threshold'] <=> $b['threshold']);
+        $this->lock->lock();
+        try {
+            $this->subscribers[] = [
+                'threshold' => $threshold,
+                'callback' => $callback,
+                'triggered' => false,
+            ];
 
-        // 如果当前进度已超过阈值，立即触发
-        if ($this->getProgress() >= $threshold) {
-            $this->triggerCallback($callback);
-            $this->subscribers[array_key_last($this->subscribers)]['triggered'] = true;
+            // 按阈值排序，方便按序触发
+            usort($this->subscribers, fn($a, $b) => $a['threshold'] <=> $b['threshold']);
+
+            // 如果当前进度已超过阈值，立即触发
+            $currentProgress = $this->getProgress();
+            if ($currentProgress >= $threshold) {
+                // 在锁内标记为已触发，在锁外执行回调
+                $lastIndex = array_key_last($this->subscribers);
+                $this->subscribers[$lastIndex]['triggered'] = true;
+                $callbackToTrigger = $callback;
+            } else {
+                $callbackToTrigger = null;
+            }
+        } finally {
+            $this->lock->unlock();
+        }
+
+        // 在锁外触发回调，避免死锁
+        if ($callbackToTrigger !== null) {
+            $this->triggerCallback($callbackToTrigger);
         }
     }
 
@@ -113,6 +138,11 @@ class StreamBuffer
         }
         $this->closed = true;
         $this->channel->close();
+
+        // 清理锁资源
+        if (isset($this->lock)) {
+            unset($this->lock);
+        }
     }
 
     /**
@@ -137,16 +167,27 @@ class StreamBuffer
     private function checkSubscribers(): void
     {
         $currentProgress = $this->getProgress();
+        $callbacksToTrigger = [];
 
-        foreach ($this->subscribers as &$subscriber) {
-            if ($subscriber['triggered']) {
-                continue;
-            }
+        $this->lock->lock();
+        try {
+            foreach ($this->subscribers as $key => &$subscriber) {
+                if ($subscriber['triggered']) {
+                    continue;
+                }
 
-            if ($currentProgress >= $subscriber['threshold']) {
-                $this->triggerCallback($subscriber['callback']);
-                $subscriber['triggered'] = true;
+                if ($currentProgress >= $subscriber['threshold']) {
+                    $callbacksToTrigger[] = $subscriber['callback'];
+                    $subscriber['triggered'] = true;
+                }
             }
+        } finally {
+            $this->lock->unlock();
+        }
+
+        // 在锁外触发回调，避免死锁
+        foreach ($callbacksToTrigger as $callback) {
+            $this->triggerCallback($callback);
         }
     }
 

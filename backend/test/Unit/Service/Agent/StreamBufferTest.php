@@ -149,6 +149,84 @@ class StreamBufferTest extends TestCase
         $this->assertEquals($expectedTotal, $buffer->getWritten());
     }
 
+    public function testConcurrentSubscribeSafety()
+    {
+        $buffer = new StreamBuffer(10000);
+
+        $concurrency = 5;
+        $subscribersPerCoroutine = 20;
+        $triggerCount = 0;
+        $lock = new \Swoole\Lock(SWOOLE_MUTEX);
+
+        // 5 个协程同时订阅
+        $wg = new Coroutine\WaitGroup();
+        for ($i = 0; $i < $concurrency; ++$i) {
+            $wg->add();
+            go(function () use ($buffer, $subscribersPerCoroutine, &$triggerCount, $lock, $wg, $i) {
+                for ($j = 0; $j < $subscribersPerCoroutine; ++$j) {
+                    $threshold = ($i * $subscribersPerCoroutine + $j + 1) * 0.01; // 0.01 到 1.0
+                    $buffer->subscribe($threshold, function () use (&$triggerCount, $lock) {
+                        $lock->lock();
+                        ++$triggerCount;
+                        $lock->unlock();
+                    });
+                }
+                $wg->done();
+            });
+        }
+        $wg->wait();
+
+        // 写入数据触发所有订阅者
+        $buffer->write(str_repeat('x', 10000));
+        Coroutine::sleep(0.1); // 等待所有回调执行
+
+        // 验证所有订阅者都被触发
+        $expectedTriggers = $concurrency * $subscribersPerCoroutine;
+        $this->assertEquals($expectedTriggers, $triggerCount);
+    }
+
+    public function testConcurrentWriteAndSubscribe()
+    {
+        $buffer = new StreamBuffer(10000);
+
+        $triggerCount = 0;
+        $lock = new \Swoole\Lock(SWOOLE_MUTEX);
+
+        $wg = new Coroutine\WaitGroup();
+
+        // 协程 1: 持续写入
+        $wg->add();
+        go(function () use ($buffer, $wg) {
+            for ($i = 0; $i < 100; ++$i) {
+                $buffer->write(str_repeat('x', 100));
+                Coroutine::sleep(0.001);
+            }
+            $wg->done();
+        });
+
+        // 协程 2: 持续订阅
+        $wg->add();
+        go(function () use ($buffer, &$triggerCount, $lock, $wg) {
+            for ($i = 1; $i <= 50; ++$i) {
+                $threshold = $i * 0.02; // 0.02 到 1.0
+                $buffer->subscribe($threshold, function () use (&$triggerCount, $lock) {
+                    $lock->lock();
+                    ++$triggerCount;
+                    $lock->unlock();
+                });
+                Coroutine::sleep(0.002);
+            }
+            $wg->done();
+        });
+
+        $wg->wait();
+        Coroutine::sleep(0.1); // 等待所有回调执行
+
+        // 验证至少有一些订阅者被触发
+        $this->assertGreaterThan(0, $triggerCount);
+    }
+    }
+
     public function testCallbackExecutionOrder()
     {
         $buffer = new StreamBuffer(1000);
