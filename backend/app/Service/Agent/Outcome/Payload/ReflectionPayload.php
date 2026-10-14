@@ -4,11 +4,19 @@ declare(strict_types=1);
 
 namespace App\Service\Agent\Outcome\Payload;
 
+use OpenApi\Attributes as OA;
+
 /**
  * 评审负荷 (Reflection Payload)
  *
  * 包含 5 维度评分和改进建议
  */
+#[OA\Schema(
+    schema: 'ReflectionPayload',
+    description: '内容评审结果，包含 5 维度评分和改进建议',
+    type: 'object',
+    required: ['scores', 'suggestions', 'average_score']
+)]
 final class ReflectionPayload
 {
     /**
@@ -17,8 +25,23 @@ final class ReflectionPayload
      * @param float $averageScore 平均分数 (0-100)
      */
     public function __construct(
+        #[OA\Property(
+            property: 'scores',
+            description: '5 维度评分：logic(逻辑连贯性)/fact(事实准确性)/language(语言流畅度)/title(标题吸引力)/structure(结构完整性)',
+            type: 'object',
+            example: ['logic' => 8, 'fact' => 9, 'language' => 7, 'title' => 8, 'structure' => 9]
+        )]
         public readonly array $scores,
+
+        #[OA\Property(
+            property: 'suggestions',
+            description: '改进建议列表',
+            type: 'array',
+            items: new OA\Items(type: 'string', example: '段落间增加过渡句')
+        )]
         public readonly array $suggestions,
+
+        #[OA\Property(property: 'average_score', description: '平均分数（1-10）', type: 'number', format: 'float', minimum: 1, maximum: 10, example: 8.2)]
         public readonly float $averageScore,
     ) {}
 
