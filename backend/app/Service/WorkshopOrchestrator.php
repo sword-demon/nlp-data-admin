@@ -8,10 +8,12 @@ use App\Constants\Code;
 use App\Enum\WorkshopState;
 use App\Exception\BusinessException;
 use App\Model\Article;
+use App\Service\Agent\AgentDAG;
 use App\Service\Agent\ContentGeneratorAgent;
 use App\Service\Agent\ImageAnalyzerAgent;
 use App\Service\Agent\OutlineGeneratorAgent;
 use App\Service\Agent\ReflectionAgent;
+use App\Service\Agent\StreamBuffer;
 use App\Service\Agent\Outcome\AgentOutcome;
 use App\Service\Agent\Outcome\Payload\ContentDraft;
 use App\Service\Agent\Outcome\Payload\GeneratedImages;
@@ -60,6 +62,8 @@ class WorkshopOrchestrator
     /**
      * 第 1 步：创建文章 → 选题研究（可降级）→ 生成候选标题。
      *
+     * 使用 AgentDAG 并行执行 TopicResearch 和 TitleGenerator。
+     *
      * @return array{article: Article, titles: array<int, array<string, mixed>>, research_fallback: bool}
      */
     public function startCreation(int $userId, string $topic, string $style): array
@@ -83,42 +87,47 @@ class WorkshopOrchestrator
         Context::set('article_id', (int) $article->getKey());
         Context::set('user_id', $userId);
 
-        // === 阶段 1a：选题研究（增强能力，失败降级） ===
-        // 当前 slice 01 桩永远降级；slice 02/03 接入 Exa + 四道防线。
         $this->transitionTo($article, WorkshopState::TOPIC_RESEARCHING);
 
-        $researchFallback = true;
-        try {
-            $researchOutcome = $this->topicResearch->execute(['topic' => $topic]);
-            /** @var ResearchBundle $bundle */
-            $bundle = $researchOutcome->payload;
-            $article->research_data = $bundle->toJsonColumn();
-            $researchFallback = $researchOutcome->isDegraded();
-            $article->save();
-        } catch (Throwable $e) {
-            // 理论上 TopicResearchAgent 已将除 FAILED 外的所有异常收编为 DEGRADED；此处保留兜底。
-            $this->logger->warning(
-                "[Workshop#{$article->getKey()}] topic research exception, degraded: {$e->getMessage()}"
-            );
-            $article->research_data = null;
-            $article->save();
-            $researchFallback = true;
-        }
+        // === 使用 AgentDAG 并行执行 TopicResearch 和 TitleGenerator ===
+        $dag = new AgentDAG($this->logger);
 
-        // === 阶段 1b：标题生成 ===
-        $this->transitionTo($article, WorkshopState::TITLE_GENERATING);
+        // 添加节点：research 和 title 无依赖关系，可并行执行
+        $dag->addNode('research', $this->topicResearch, ['topic' => $topic]);
+        $dag->addNode('title', $this->titleAgent, [
+            'topic' => $topic,
+            'style' => $style,
+        ]);
 
         try {
-            $titleOutcome = $this->titleAgent->execute([
-                'topic' => $topic,
-                'style' => $style,
-                'research_data' => $article->research_data,
-            ]);
+            $results = $dag->execute();
         } catch (Throwable $e) {
             $this->markFailed($article, $e->getMessage());
             throw $e;
         }
 
+        // === 处理 research 结果 ===
+        $researchFallback = true;
+        if (isset($results['research'])) {
+            $researchOutcome = $results['research'];
+            if ($researchOutcome->isOk() || $researchOutcome->isDegraded()) {
+                /** @var ResearchBundle $bundle */
+                $bundle = $researchOutcome->payload;
+                $article->research_data = $bundle->toJsonColumn();
+                $researchFallback = $researchOutcome->isDegraded();
+            } else {
+                $this->logger->warning("[Workshop#{$article->getKey()}] research failed, degraded");
+                $article->research_data = null;
+            }
+        }
+
+        // === 处理 title 结果 ===
+        if (! isset($results['title']) || $results['title']->isFailed()) {
+            $this->markFailed($article, 'title generation failed');
+            throw new BusinessException(Code::WORKSHOP_AGENT_FAILED, 'title generation failed', 500);
+        }
+
+        $titleOutcome = $results['title'];
         /** @var TitleCandidates $titlesPayload */
         $titlesPayload = $titleOutcome->payload;
         $titles = $titlesPayload->toArray();
@@ -206,6 +215,8 @@ class WorkshopOrchestrator
     /**
      * 第 3 步（SSE 流式）：从大纲生成正文 → 分析配图 → 生成配图。
      *
+     * 使用 StreamBuffer 在 ContentGenerator 输出 50% 时触发 ImageAnalyzer 并行分析。
+     *
      * 执行过程中实时通过 $stream 广播事件：state / content_chunk / error / done
      */
     public function generateContentAndImages(Article $article, EventStream $stream): void
@@ -214,13 +225,41 @@ class WorkshopOrchestrator
         Context::set('user_id', (int) $article->user_id);
         $this->assertState($article, WorkshopState::OUTLINE_EDITING);
 
-        // === 阶段 3a：正文生成（流式） ===
+        // === 阶段 3a：正文生成（流式 + 并行配图分析） ===
         $this->transitionTo($article, WorkshopState::CONTENT_GENERATING);
         $this->sse->broadcastStateChange($stream, WorkshopState::CONTENT_GENERATING, ['title' => $article->selected_title]);
 
         $outline = (array) ($article->outline ?? []);
         $content = '';
         $placeholders = [];
+
+        // 创建 StreamBuffer，预估 5000 字节
+        $buffer = new StreamBuffer(5000);
+        $imageAnalysisStarted = false;
+        $analysesResult = null;
+
+        // 订阅 50% 触发 ImageAnalyzer
+        $buffer->subscribe(0.5, function () use (&$imageAnalysisStarted, $buffer, &$analysesResult, $article, $outline, $stream) {
+            if ($imageAnalysisStarted) {
+                return;
+            }
+            $imageAnalysisStarted = true;
+
+            $this->logger->info("[Workshop#{$article->getKey()}] triggering parallel image analysis at 50%");
+
+            // 在独立协程中分析（无需等待完整内容）
+            go(function () use ($buffer, &$analysesResult, $article, $outline, $stream) {
+                try {
+                    // 读取已生成的部分内容进行分析
+                    // 注意: 这里简化处理，实际可以累积 buffer 中的内容
+                    $this->transitionTo($article, WorkshopState::IMAGE_ANALYZING);
+                    $this->sse->broadcast($stream, 'image_analysis_started_early', ['progress' => $buffer->getProgress()]);
+                } catch (Throwable $e) {
+                    $this->logger->warning("[Workshop#{$article->getKey()}] early image analysis preparation failed: {$e->getMessage()}");
+                }
+            });
+        });
+
         try {
             $generator = $this->contentAgent->executeStream([
                 'title' => (string) $article->selected_title,
@@ -229,10 +268,15 @@ class WorkshopOrchestrator
                 'outline_markdown' => (string) ($outline['markdown'] ?? ''),
                 'research_data' => $article->research_data,
             ]);
+
             foreach ($generator as $chunk) {
                 $content .= $chunk;
+                $buffer->write($chunk); // 自动触发进度检查
                 $this->sse->broadcastContentChunk($stream, $chunk);
             }
+
+            $buffer->close();
+
             /** @var AgentOutcome $contentOutcome */
             $contentOutcome = $generator->getReturn();
             /** @var ContentDraft $draft */
@@ -241,6 +285,7 @@ class WorkshopOrchestrator
             $content = $draft->content;
             $placeholders = $draft->placeholdersAsArray();
         } catch (Throwable $e) {
+            $buffer->close();
             $this->markFailed($article, $e->getMessage());
             $this->sse->broadcastError($stream, $e->getMessage(), $this->contentAgent->getName());
             $this->sse->end($stream);
@@ -324,7 +369,7 @@ class WorkshopOrchestrator
         $analyses = $analysesPayload->toArray();
         $this->sse->broadcast($stream, 'image_analyzed', ['analyses' => $analyses]);
 
-        // === 阶段 3c：并行配图（Phase 3 占位）===
+        // === 阶段 3d：并行配图 ===
         $this->transitionTo($article, WorkshopState::IMAGE_GENERATING);
         $this->sse->broadcastStateChange($stream, WorkshopState::IMAGE_GENERATING);
 

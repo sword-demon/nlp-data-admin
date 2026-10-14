@@ -12,6 +12,8 @@ use App\Service\Agent\OutlineGeneratorAgent;
 use App\Service\Agent\Outcome\AgentOutcome;
 use App\Service\Agent\Outcome\Payload\ContentDraft;
 use App\Service\Agent\Outcome\Payload\ReflectionPayload;
+use App\Service\Agent\Outcome\Payload\ResearchBundle;
+use App\Service\Agent\Outcome\Payload\TitleCandidates;
 use App\Service\Agent\ParallelImageGenerator;
 use App\Service\Agent\ReflectionAgent;
 use App\Service\Agent\TitleGeneratorAgent;
@@ -25,10 +27,11 @@ use Hyperf\Contract\StdoutLoggerInterface;
 use Hyperf\Engine\Http\EventStream;
 use HyperfTest\TestCase;
 use Mockery;
+use Swoole\Coroutine;
 use Throwable;
 
 /**
- * WorkshopOrchestrator 集成 ReflectionAgent 测试
+ * WorkshopOrchestrator DAG 改造测试
  */
 class WorkshopOrchestratorTest extends TestCase
 {
@@ -80,6 +83,144 @@ class WorkshopOrchestratorTest extends TestCase
         Context::destroy('user_id');
         parent::tearDown();
     }
+
+    // === DAG 并行测试 ===
+
+    public function testStartCreationDAGParallelExecution()
+    {
+        $this->logger->shouldReceive('info')->atLeast()->once();
+        $this->logger->shouldReceive('warning')->never();
+
+        // Mock research outcome
+        $researchBundle = new ResearchBundle(
+            keyPoints: ['关键点1', '关键点2'],
+            sources: [['title' => '来源1', 'url' => 'https://example.com']],
+            summary: '研究摘要'
+        );
+        $this->topicResearch->shouldReceive('execute')
+            ->once()
+            ->andReturnUsing(function () use ($researchBundle) {
+                Coroutine::sleep(0.1); // 模拟耗时
+                return AgentOutcome::ok($researchBundle);
+            });
+        $this->topicResearch->shouldReceive('getName')->andReturn('topic_research');
+
+        // Mock title outcome
+        $titleCandidates = new TitleCandidates(
+            titles: [
+                ['title' => '标题1', 'reason' => '理由1', 'score' => 9],
+                ['title' => '标题2', 'reason' => '理由2', 'score' => 8],
+            ]
+        );
+        $this->titleAgent->shouldReceive('execute')
+            ->once()
+            ->andReturnUsing(function () use ($titleCandidates) {
+                Coroutine::sleep(0.1); // 模拟耗时
+                return AgentOutcome::ok($titleCandidates);
+            });
+        $this->titleAgent->shouldReceive('getName')->andReturn('title_generator');
+
+        $startTime = microtime(true);
+        $result = $this->orchestrator->startCreation(1, '测试主题', '通用');
+        $duration = microtime(true) - $startTime;
+
+        // 验证并行执行：总耗时应接近单个 Agent 的耗时（~0.1s），而非串行的累加（~0.2s）
+        $this->assertLessThan(0.15, $duration, 'DAG parallel execution should be faster than sequential');
+
+        $this->assertArrayHasKey('article', $result);
+        $this->assertArrayHasKey('titles', $result);
+        $this->assertArrayHasKey('research_fallback', $result);
+        $this->assertEquals(2, count($result['titles']));
+        $this->assertFalse($result['research_fallback']);
+    }
+
+    public function testStartCreationResearchDegradedTitleSuccess()
+    {
+        $this->logger->shouldReceive('info')->atLeast()->once();
+        $this->logger->shouldReceive('warning')->atLeast()->once();
+
+        // Mock research degraded
+        $researchBundle = new ResearchBundle(keyPoints: [], sources: [], summary: '');
+        $this->topicResearch->shouldReceive('execute')
+            ->once()
+            ->andReturn(AgentOutcome::degraded($researchBundle, 'research service unavailable', 'research_degraded'));
+        $this->topicResearch->shouldReceive('getName')->andReturn('topic_research');
+
+        // Mock title success
+        $titleCandidates = new TitleCandidates(
+            titles: [['title' => '标题1', 'reason' => '理由1', 'score' => 9]]
+        );
+        $this->titleAgent->shouldReceive('execute')
+            ->once()
+            ->andReturn(AgentOutcome::ok($titleCandidates));
+        $this->titleAgent->shouldReceive('getName')->andReturn('title_generator');
+
+        $result = $this->orchestrator->startCreation(1, '测试主题', '通用');
+
+        $this->assertTrue($result['research_fallback']);
+        $this->assertEquals(1, count($result['titles']));
+    }
+
+    public function testStartCreationTitleFailedStopsWorkflow()
+    {
+        $this->logger->shouldReceive('info')->atLeast()->once();
+        $this->logger->shouldReceive('warning')->atLeast()->once();
+        $this->logger->shouldReceive('error')->atLeast()->once();
+
+        // Mock research success
+        $researchBundle = new ResearchBundle(
+            keyPoints: ['关键点1'],
+            sources: [],
+            summary: '摘要'
+        );
+        $this->topicResearch->shouldReceive('execute')
+            ->once()
+            ->andReturn(AgentOutcome::ok($researchBundle));
+        $this->topicResearch->shouldReceive('getName')->andReturn('topic_research');
+
+        // Mock title failed
+        $this->titleAgent->shouldReceive('execute')
+            ->once()
+            ->andReturn(AgentOutcome::failed('title generation failed'));
+        $this->titleAgent->shouldReceive('getName')->andReturn('title_generator');
+
+        $this->expectException(Throwable::class);
+        $this->orchestrator->startCreation(1, '测试主题', '通用');
+    }
+
+    // === StreamBuffer 流式测试 ===
+
+    public function testGenerateContentWithStreamBuffer()
+    {
+        $article = $this->createArticleInOutlineEditing();
+        $stream = Mockery::mock(EventStream::class);
+
+        // Mock content generation (流式输出)
+        $this->mockContentGeneration('测试正文内容', []);
+
+        // Mock reflection - passed
+        $passedPayload = new ReflectionPayload(
+            scores: ['logic' => 8, 'fact' => 8, 'language' => 8, 'title' => 8, 'structure' => 8],
+            suggestions: [],
+            averageScore: 8.0
+        );
+        $this->reflectionAgent->shouldReceive('execute')
+            ->once()
+            ->andReturn(AgentOutcome::ok($passedPayload));
+
+        // Mock image analysis and generation
+        $this->mockImageProcessing();
+
+        // Expect SSE events
+        $this->expectSseEvents($stream, true, false);
+
+        $this->orchestrator->generateContentAndImages($article, $stream);
+
+        $article->refresh();
+        $this->assertEquals(WorkshopState::COMPLETED->value, $article->status);
+    }
+
+    // === 原有 ReflectionAgent 测试 ===
 
     public function testReflectionPassedNoRewrite()
     {
@@ -237,7 +378,7 @@ class WorkshopOrchestratorTest extends TestCase
 
     private function mockContentGeneration(string $content, array $placeholders): void
     {
-        $generator = (function () use ($content) {
+        $generator = (function () use ($content, $placeholders) {
             yield '测';
             yield '试';
             return AgentOutcome::ok(new ContentDraft($content, $placeholders));
