@@ -1,0 +1,115 @@
+name: CI - 前端类型自动生成
+
+on:
+  push:
+    paths:
+      - 'backend/app/Service/Agent/Outcome/Payload/**'
+      - 'backend/config/autoload/swagger.php'
+      - 'backend/app/OpenApiConfig.php'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'backend/app/Service/Agent/Outcome/Payload/**'
+      - 'backend/config/autoload/swagger.php'
+      - 'backend/app/OpenApiConfig.php'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:
+
+jobs:
+  generate-types:
+    name: 生成前端类型定义
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 设置 PHP 环境
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: swoole, redis, pdo_mysql
+          coverage: none
+
+      - name: 安装 PHP 依赖
+        working-directory: backend
+        run: |
+          composer install --no-interaction --prefer-dist
+
+      - name: 生成 swagger.json
+        working-directory: backend
+        run: |
+          mkdir -p storage
+          ./vendor/bin/openapi \
+            --output storage/swagger.json \
+            --format json \
+            app/OpenApiConfig.php \
+            app/Service/Agent/Outcome/Payload \
+            app/Controller
+
+      - name: 验证 swagger.json
+        working-directory: backend
+        run: |
+          if [ ! -f storage/swagger.json ]; then
+            echo "❌ swagger.json 生成失败"
+            exit 1
+          fi
+
+          SCHEMA_COUNT=$(jq '.components.schemas | keys | length' storage/swagger.json)
+          echo "✅ 生成了 $SCHEMA_COUNT 个 schemas"
+
+          if [ "$SCHEMA_COUNT" -lt 7 ]; then
+            echo "⚠️ Schema 数量少于预期 (< 7)"
+            exit 1
+          fi
+
+      - name: 设置 Node.js 环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: npm ci
+
+      - name: 生成 TypeScript 类型
+        working-directory: frontend
+        run: npm run generate:types
+
+      - name: 验证 TypeScript 编译
+        working-directory: frontend
+        run: npm run build
+
+      - name: 检查文件变更
+        id: check_changes
+        run: |
+          git diff --exit-code frontend/src/types/api.ts || echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: 提交类型文件
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add frontend/src/types/api.ts
+          git commit -m "chore(types): 自动生成前端类型定义
+
+          由 GitHub Actions 自动生成
+          触发原因: Payload DTO 变更"
+
+      - name: 推送变更
+        if: steps.check_changes.outputs.changed == 'true'
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref }}
+
+      - name: 完成通知
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          echo "✅ 前端类型已自动更新并提交"
+          echo "📁 文件: frontend/src/types/api.ts"

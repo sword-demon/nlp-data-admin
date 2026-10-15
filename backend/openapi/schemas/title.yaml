@@ -1,0 +1,70 @@
+components:
+  schemas:
+    TitleCandidate:
+      type: object
+      description: 单个标题候选项，包含标题文本、分析和评分
+      required:
+        - title
+        - analysis
+        - score
+      properties:
+        title:
+          type: string
+          description: 候选标题文本
+          example: "AI 技术如何改变世界"
+        analysis:
+          type: string
+          description: 标题分析说明
+          example: "该标题简洁明了，突出了 AI 的影响力"
+        score:
+          type: integer
+          description: 标题评分 1-10
+          minimum: 1
+          maximum: 10
+          example: 8
+
+    TitlePoll:
+      type: object
+      description: 标题投票结果，包含多个候选标题和用户反馈
+      required:
+        - candidates
+        - total_votes
+      properties:
+        candidates:
+          type: array
+          description: 候选标题列表
+          items:
+            $ref: '#/components/schemas/TitleCandidate'
+          minItems: 1
+        total_votes:
+          type: integer
+          description: 总投票数
+          minimum: 0
+          example: 150
+        feedback:
+          type: string
+          nullable: true
+          description: 用户整体反馈
+          example: "候选标题都很不错，倾向于第一个"
+
+    TitleDecision:
+      type: object
+      description: 最终标题决策结果，包含选中标题和决策依据
+      required:
+        - selected_title
+        - reason
+      properties:
+        selected_title:
+          type: string
+          description: 最终选中的标题
+          example: "AI 技术如何改变世界"
+        reason:
+          type: string
+          description: 选择该标题的原因
+          example: "该标题最能吸引目标读者，同时清晰传达主题"
+        alternatives:
+          type: array
+          description: 备选标题列表
+          items:
+            type: string
+          example: ["AI 的未来展望", "人工智能改变生活"]

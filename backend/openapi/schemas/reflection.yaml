@@ -1,0 +1,62 @@
+components:
+  schemas:
+    ReflectionPrompt:
+      type: object
+      description: 反思提示，引导 Agent 进行自我评估
+      required:
+        - question
+      properties:
+        question:
+          type: string
+          description: 反思问题
+          example: "这个标题是否能吸引目标读者？"
+        context:
+          type: string
+          nullable: true
+          description: 上下文信息
+          example: "目标读者是技术爱好者"
+        dimensions:
+          type: array
+          description: 评估维度列表
+          items:
+            type: string
+          example: ["相关性", "清晰度", "吸引力"]
+
+    ReflectionResponse:
+      type: object
+      description: 反思响应，包含评估结果和改进建议
+      required:
+        - scores
+        - overall_quality
+      properties:
+        scores:
+          type: object
+          description: 各维度评分（1-10）
+          additionalProperties:
+            type: integer
+            minimum: 1
+            maximum: 10
+          example:
+            相关性: 9
+            清晰度: 8
+            吸引力: 7
+        overall_quality:
+          type: integer
+          description: 综合质量评分（1-10）
+          minimum: 1
+          maximum: 10
+          example: 8
+        feedback:
+          type: string
+          description: 详细反馈意见
+          example: "标题整体质量良好，建议增强吸引力"
+        suggestions:
+          type: array
+          description: 改进建议列表
+          items:
+            type: string
+          example: ["添加数字或数据增强可信度", "使用疑问句式激发好奇心"]
+        needs_revision:
+          type: boolean
+          description: 是否需要修订
+          example: false

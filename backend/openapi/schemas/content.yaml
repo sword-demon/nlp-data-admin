@@ -1,0 +1,71 @@
+components:
+  schemas:
+    ContentDraft:
+      type: object
+      description: 内容草稿，包含文章正文和元信息
+      required:
+        - text
+        - word_count
+      properties:
+        text:
+          type: string
+          description: 正文内容
+          example: "这是一篇关于 AI 技术的文章..."
+        word_count:
+          type: integer
+          description: 字数统计
+          minimum: 0
+          example: 1500
+        sections:
+          type: array
+          description: 章节列表（按顺序）
+          items:
+            type: string
+          example: ["引言", "技术背景", "应用案例", "总结"]
+        metadata:
+          type: object
+          description: 附加元信息
+          additionalProperties: true
+          example:
+            author: "AI Writer"
+            created_at: "2026-10-15T10:00:00Z"
+
+    ContentRevision:
+      type: object
+      description: 内容修订记录，包含修改前后对比
+      required:
+        - original
+        - revised
+        - changes
+      properties:
+        original:
+          type: string
+          description: 原始内容
+          example: "原始文本内容..."
+        revised:
+          type: string
+          description: 修订后内容
+          example: "修订后的文本内容..."
+        changes:
+          type: array
+          description: 具体修改点列表
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                description: 修改类型
+                enum: [addition, deletion, modification]
+                example: "modification"
+              location:
+                type: string
+                description: 修改位置（段落号或行号）
+                example: "第 3 段"
+              description:
+                type: string
+                description: 修改说明
+                example: "优化表达，增强可读性"
+        reason:
+          type: string
+          description: 修订原因
+          example: "根据用户反馈优化语气"

@@ -1,0 +1,41 @@
+openapi: 3.0.0
+info:
+  title: Agent Outcome Payload DTOs
+  description: 统一的 Agent 输出数据传输对象定义
+  version: 1.0.0
+
+components:
+  schemas:
+    # Title 模块
+    TitleCandidate:
+      $ref: './schemas/title.yaml#/components/schemas/TitleCandidate'
+    TitlePoll:
+      $ref: './schemas/title.yaml#/components/schemas/TitlePoll'
+    TitleDecision:
+      $ref: './schemas/title.yaml#/components/schemas/TitleDecision'
+
+    # Outline 模块
+    OutlineNode:
+      $ref: './schemas/outline.yaml#/components/schemas/OutlineNode'
+    OutlineStructure:
+      $ref: './schemas/outline.yaml#/components/schemas/OutlineStructure'
+
+    # Content 模块
+    ContentDraft:
+      $ref: './schemas/content.yaml#/components/schemas/ContentDraft'
+    ContentRevision:
+      $ref: './schemas/content.yaml#/components/schemas/ContentRevision'
+
+    # Images 模块
+    ImageryRequirement:
+      $ref: './schemas/images.yaml#/components/schemas/ImageryRequirement'
+    ImagePlaceholder:
+      $ref: './schemas/images.yaml#/components/schemas/ImagePlaceholder'
+    ImageCaption:
+      $ref: './schemas/images.yaml#/components/schemas/ImageCaption'
+
+    # Reflection 模块
+    ReflectionPrompt:
+      $ref: './schemas/reflection.yaml#/components/schemas/ReflectionPrompt'
+    ReflectionResponse:
+      $ref: './schemas/reflection.yaml#/components/schemas/ReflectionResponse'
