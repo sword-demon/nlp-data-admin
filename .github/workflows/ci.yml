@@ -5,6 +5,14 @@ on:
     paths:
       - 'backend/app/Service/Agent/Outcome/Payload/**'
       - 'backend/config/autoload/swagger.php'
+      - 'backend/app/OpenApiConfig.php'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'backend/app/Service/Agent/Outcome/Payload/**'
+      - 'backend/config/autoload/swagger.php'
+      - 'backend/app/OpenApiConfig.php'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 jobs:
