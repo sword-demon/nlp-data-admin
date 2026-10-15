@@ -1,0 +1,153 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ namespace }};
+
+/**
+ * {{ className }}
+ *
+ * {{ description }}
+ *
+ * @category {{ module }}
+ * @generated 此文件由 bin/generate-dtos.php 自动生成,请勿手动修改
+ * @see openapi/schemas/{{ module|lower }}.yaml
+ */
+class {{ className }}
+{
+{% for property in properties %}
+    /**
+     * {{ property.description }}
+{% if property.example is not null %}
+     * @example {{ property.example|json_encode }}
+{% endif %}
+{% if property.isArray %}
+     * @var {{ property.arrayItemType }}[]{% if property.nullable %}|null{% endif %}
+
+{% elseif property.isObject and property.additionalProperties %}
+     * @var array<string, {{ property.additionalProperties.type|default('mixed') }}>{% if property.nullable %}|null{% endif %}
+
+{% else %}
+     * @var {{ property.type }}{% if property.nullable %}|null{% endif %}
+
+{% endif %}
+     */
+    public {% if property.type == 'array' %}array{% elseif property.type == 'int' %}int{% elseif property.type == 'float' %}float{% elseif property.type == 'bool' %}bool{% elseif property.type == 'string' %}string{% else %}mixed{% endif %}{% if property.nullable %}|null{% endif %} ${{ property.name }}{% if property.nullable %} = null{% endif %};
+
+{% endfor %}
+    /**
+     * Constructor
+     *
+{% for property in properties %}
+     * @param {{ property.type }}{% if property.nullable %}|null{% endif %} ${{ property.name }} {{ property.description }}
+{% endfor %}
+     */
+    public function __construct(
+{% for property in properties %}
+{% if not property.nullable %}
+        {{ property.type }} ${{ property.name }}{% if property.required %},{% else %} = {% if property.type == 'array' %}[]{% elseif property.type == 'string' %}''{% elseif property.type == 'int' %}0{% elseif property.type == 'bool' %}false{% else %}null{% endif %},{% endif %}
+
+{% endif %}
+{% endfor %}
+{% for property in properties %}
+{% if property.nullable %}
+        ?{{ property.type }} ${{ property.name }} = null{% if not loop.last %},{% endif %}
+
+{% endif %}
+{% endfor %}
+    ) {
+{% for property in properties %}
+        $this->{{ property.name }} = ${{ property.name }};
+{% endfor %}
+    }
+
+    /**
+     * Convert to array
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray(): array
+    {
+        return [
+{% for property in properties %}
+            '{{ property.name }}' => $this->{{ property.name }},
+{% endfor %}
+        ];
+    }
+
+    /**
+     * Create from array
+     *
+     * @param array<string, mixed> $data
+     * @return static
+     */
+    public static function fromArray(array $data): static
+    {
+        return new static(
+{% for property in properties %}
+{% if not property.nullable %}
+            {{ property.name }}: $data['{{ property.name }}']{% if property.required %},{% else %} ?? {% if property.type == 'array' %}[]{% elseif property.type == 'string' %}''{% elseif property.type == 'int' %}0{% elseif property.type == 'bool' %}false{% else %}null{% endif %},{% endif %}
+
+{% endif %}
+{% endfor %}
+{% for property in properties %}
+{% if property.nullable %}
+            {{ property.name }}: $data['{{ property.name }}'] ?? null{% if not loop.last %},{% endif %}
+
+{% endif %}
+{% endfor %}
+        );
+    }
+{% if properties|length > 0 %}
+
+    /**
+     * Validate data
+     *
+     * @param array<string, mixed> $data
+     * @throws \InvalidArgumentException
+     * @return void
+     */
+    public static function validate(array $data): void
+    {
+        // 检查必需字段
+{% for property in properties %}
+{% if property.required and not property.nullable %}
+        if (!isset($data['{{ property.name }}'])) {
+            throw new \InvalidArgumentException('Missing required field: {{ property.name }}');
+        }
+{% endif %}
+{% endfor %}
+
+        // 类型检查
+{% for property in properties %}
+{% if property.type == 'string' %}
+        if (isset($data['{{ property.name }}']) && !is_string($data['{{ property.name }}']){% if property.nullable %} && !is_null($data['{{ property.name }}']){% endif %}) {
+            throw new \InvalidArgumentException('Field {{ property.name }} must be a string');
+        }
+{% elseif property.type == 'int' %}
+        if (isset($data['{{ property.name }}']) && !is_int($data['{{ property.name }}']){% if property.nullable %} && !is_null($data['{{ property.name }}']){% endif %}) {
+            throw new \InvalidArgumentException('Field {{ property.name }} must be an integer');
+        }
+{% if property.minimum is not null %}
+        if (isset($data['{{ property.name }}']) && $data['{{ property.name }}'] < {{ property.minimum }}) {
+            throw new \InvalidArgumentException('Field {{ property.name }} must be >= {{ property.minimum }}');
+        }
+{% endif %}
+{% if property.maximum is not null %}
+        if (isset($data['{{ property.name }}']) && $data['{{ property.name }}'] > {{ property.maximum }}) {
+            throw new \InvalidArgumentException('Field {{ property.name }} must be <= {{ property.maximum }}');
+        }
+{% endif %}
+{% elseif property.type == 'bool' %}
+        if (isset($data['{{ property.name }}']) && !is_bool($data['{{ property.name }}']){% if property.nullable %} && !is_null($data['{{ property.name }}']){% endif %}) {
+            throw new \InvalidArgumentException('Field {{ property.name }} must be a boolean');
+        }
+{% elseif property.type == 'array' %}
+        if (isset($data['{{ property.name }}']) && !is_array($data['{{ property.name }}']){% if property.nullable %} && !is_null($data['{{ property.name }}']){% endif %}) {
+            throw new \InvalidArgumentException('Field {{ property.name }} must be an array');
+        }
+{% endif %}
+{% endfor %}
+    }
+{% endif %}
+}

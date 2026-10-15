@@ -1,0 +1,89 @@
+components:
+  schemas:
+    ImageryRequirement:
+      type: object
+      description: 图片需求定义，描述所需图片的特征和用途
+      required:
+        - description
+        - purpose
+      properties:
+        description:
+          type: string
+          description: 图片内容描述
+          example: "一张展示 AI 芯片的高清照片"
+        purpose:
+          type: string
+          description: 使用目的
+          example: "文章配图，说明硬件基础"
+        style:
+          type: string
+          nullable: true
+          description: 风格要求
+          example: "现代科技感，蓝色调"
+        dimensions:
+          type: object
+          nullable: true
+          description: 尺寸要求
+          properties:
+            width:
+              type: integer
+              minimum: 1
+              example: 1920
+            height:
+              type: integer
+              minimum: 1
+              example: 1080
+        keywords:
+          type: array
+          description: 关键词列表
+          items:
+            type: string
+          example: ["AI", "芯片", "技术"]
+
+    ImagePlaceholder:
+      type: object
+      description: 图片占位符，标记图片插入位置和属性
+      required:
+        - position
+        - placeholder_text
+      properties:
+        position:
+          type: string
+          description: 插入位置（段落号或章节标识）
+          example: "第 2 段后"
+        placeholder_text:
+          type: string
+          description: 占位文本
+          example: "[图片：AI 芯片示意图]"
+        requirement:
+          $ref: '#/components/schemas/ImageryRequirement'
+        alt_text:
+          type: string
+          description: 图片 alt 文本（无障碍）
+          example: "AI 芯片的内部结构示意图"
+
+    ImageCaption:
+      type: object
+      description: 图片标题和说明文字
+      required:
+        - caption
+      properties:
+        caption:
+          type: string
+          description: 标题文字
+          example: "图 1：AI 芯片架构"
+        description:
+          type: string
+          nullable: true
+          description: 详细说明
+          example: "该芯片采用 7nm 工艺，专为深度学习优化"
+        source:
+          type: string
+          nullable: true
+          description: 图片来源
+          example: "NVIDIA 官网"
+        license:
+          type: string
+          nullable: true
+          description: 版权信息
+          example: "CC BY-SA 4.0"

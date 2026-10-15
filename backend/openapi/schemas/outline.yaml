@@ -1,0 +1,58 @@
+components:
+  schemas:
+    OutlineNode:
+      type: object
+      description: 大纲节点，表示文章结构的一个层级
+      required:
+        - id
+        - text
+        - level
+      properties:
+        id:
+          type: integer
+          description: 节点唯一标识
+          example: 1
+        text:
+          type: string
+          description: 节点文本内容
+          example: "引言"
+        level:
+          type: integer
+          description: 层级深度，1 为一级标题
+          minimum: 1
+          example: 1
+        parent_id:
+          type: integer
+          nullable: true
+          description: 父节点 ID，顶层节点为 null
+          example: null
+        children:
+          type: array
+          description: 子节点列表
+          items:
+            $ref: '#/components/schemas/OutlineNode'
+          default: []
+
+    OutlineStructure:
+      type: object
+      description: 完整的文章大纲结构
+      required:
+        - nodes
+        - total_sections
+      properties:
+        nodes:
+          type: array
+          description: 所有大纲节点（扁平列表）
+          items:
+            $ref: '#/components/schemas/OutlineNode'
+          minItems: 1
+        total_sections:
+          type: integer
+          description: 总章节数
+          minimum: 1
+          example: 5
+        max_depth:
+          type: integer
+          description: 最大嵌套深度
+          minimum: 1
+          example: 3
