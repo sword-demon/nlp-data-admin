@@ -27,4 +27,8 @@ Issues 和 PRD 以 markdown 文件形式存于 `.scratch/`，triage 状态由**�
 
 Multi-context monorepo：根 [`CONTEXT-MAP.md`](./CONTEXT-MAP.md) 指向 `backend/CONTEXT.md` 和 `frontend/CONTEXT.md`；context 级 ADR 分别在 `backend/docs/adr/` 和 `frontend/docs/adr/`，系统级 ADR 在 `docs/adr/`。详见 [`docs/agents/domain.md`](./docs/agents/domain.md)。
 
+`CONCEPTS.md` — 共享领域词汇表（实体、命名流程、状态概念）——在熟悉代码库或讨论领域概念时相关。
+
+`docs/solutions/` — 已记录的已解决问题（bug 修复、最佳实践、工作流模式），按类别组织，带 YAML frontmatter（`module`、`tags`、`problem_type`）。在已记录领域实现或调试时相关。
+
 > `backend/CONTEXT.md` / `frontend/CONTEXT.md` 尚未建立 —— `grill-with-docs` 会在领域术语首次被澄清时惰性生成。
