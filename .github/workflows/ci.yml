@@ -34,6 +34,7 @@ jobs:
       - name: 生成 swagger.json
         working-directory: backend
         run: |
+          mkdir -p storage
           ./vendor/bin/openapi \
             --output storage/swagger.json \
             --format json \

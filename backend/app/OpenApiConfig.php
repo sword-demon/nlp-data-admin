@@ -19,6 +19,7 @@ use OpenApi\Attributes as OA;
     url: 'https://api.example.com',
     description: '生产环境'
 )]
+#[OA\PathItem(path: '/api')]
 class OpenApiConfig
 {
 }
