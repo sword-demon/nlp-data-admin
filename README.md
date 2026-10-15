@@ -11,6 +11,7 @@
 - **✍️ Human-in-the-loop 创作工坊**：AI 生成标题你来选 → AI 生成大纲你可改 → AI 流式写正文可实时预览
 - **🖼️ 6 种智能配图**：Pexels 真实图库 / Mermaid 流程图 / Iconify 图标 / Emoji / SVG 概念图 / AI 生图（Nano Banana）
 - **⚡ 实时 SSE 流式**：边写边看的 Markdown，带 highlight.js 代码高亮，无刷新预览
+- **🔧 OpenAPI 驱动 DTO**：Schema → Twig 模板 → PHP 类自动生成，零手写 DTO，类型安全保证，CI 自动校验
 - **👑 VIP 会员 + 配额**：免费 / 月费 / 年费三档，与 z-pay 聚合支付对接，微信/支付宝扫码
 - **📊 可观测性 Dashboard**：ECharts 可视化 Agent 调用量、成功率、P95 耗时、日志流
 
@@ -123,6 +124,7 @@ nlp-data-admin/
 ## 📚 文档
 
 - [DTO 自动生成系统](./backend/docs/DTO-GENERATION.md) — OpenAPI Schema 驱动的类型安全 DTO 生成
+- [OpenAPI DTO 生成器设计文档](./docs/solutions/tooling-decisions/openapi-dto-code-generator.md) — 架构决策、实现细节与 CI 集成
 - [API 接口文档](./docs/api.md) — 完整端点定义、SSE 事件类型、状态枚举
 - [部署指南](./docs/deployment.md) — 环境要求、一键部署、HTTPS、常见问题
 - [环境变量模板](./backend/.env.example) — 所有配置项及其用途
@@ -137,6 +139,9 @@ docker exec -it nlp-backend sh
 
 # 手动迁移
 docker exec -it nlp-backend php bin/hyperf.php migrate --force
+
+# 生成 DTO（从 OpenAPI schemas）
+docker exec -it nlp-backend composer run generate:dto
 
 # 查看路由列表
 docker exec -it nlp-backend php bin/hyperf.php describe:routes
@@ -153,6 +158,7 @@ cd frontend/
 npm run dev         # 本地 dev（不进 Docker）
 npm run build       # 产线构建
 npx vue-tsc -b      # 类型检查
+npm run generate:types  # 从 swagger.json 生成 TypeScript 类型
 ```
 
 ## 🎯 路线图
@@ -165,7 +171,8 @@ npx vue-tsc -b      # 类型检查
 - [x] Phase 6 可观测性（AgentLog + AOP + Dashboard）
 - [x] Phase 7 前端全流程联调（创作工坊 UI + Dashboard + 我的文章 + 个人中心）
 - [x] Phase 8 部署与文档（Nginx SSE + 多阶段镜像 + 一键 `docker compose up`）
-- [x] Topic Research Agent（Exa 搜索 + LLM 浓缩 + 四道防线 + 下游 4 Agent 注入 + 前端降级提示）
+- [x] Phase 9 Topic Research Agent（Exa 搜索 + LLM 浓缩 + 四道防线 + 下游 4 Agent 注入 + 前端降级提示）
+- [x] Phase 10 OpenAPI DTO 自动生成（Schema 驱动 + Twig 模板 + CI 集成 + 类型安全）
 
 ## 📄 License
 
