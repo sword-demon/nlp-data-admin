@@ -122,6 +122,7 @@ nlp-data-admin/
 
 ## 📚 文档
 
+- [DTO 自动生成系统](./backend/docs/DTO-GENERATION.md) — OpenAPI Schema 驱动的类型安全 DTO 生成
 - [API 接口文档](./docs/api.md) — 完整端点定义、SSE 事件类型、状态枚举
 - [部署指南](./docs/deployment.md) — 环境要求、一键部署、HTTPS、常见问题
 - [环境变量模板](./backend/.env.example) — 所有配置项及其用途
