@@ -7,11 +7,14 @@
 ## ✨ 核心特性
 
 - **🧠 多 Agent 编排**：TopicResearch · TitleGenerator · OutlineGenerator · ContentGenerator · ImageAnalyzer · ParallelImageGenerator 六环节流水线
+- **🔀 DAG 智能编排**：基于拓扑排序的 AgentDAG 编排器，DFS 环检测 + Kahn 算法分层 + Hyperf 协程并行执行，自动处理复杂依赖关系
+- **📡 流式智能触发**：StreamBuffer 协程安全缓冲区，ContentGenerator 50% 进度自动触发 ImageAnalyzer 并行分析，边生成边配图零等待
 - **🔎 选题背景研究**：Exa neural 搜索 + LLM 五段式事实清单（核心概念/关键事实/观点分歧/可引用数据/信息缺口），带缓存+单飞锁+令牌桶+用户配额四道防线，资料自动注入下游 4 Agent
 - **✍️ Human-in-the-loop 创作工坊**：AI 生成标题你来选 → AI 生成大纲你可改 → AI 流式写正文可实时预览
 - **🖼️ 6 种智能配图**：Pexels 真实图库 / Mermaid 流程图 / Iconify 图标 / Emoji / SVG 概念图 / AI 生图（Nano Banana）
 - **⚡ 实时 SSE 流式**：边写边看的 Markdown，带 highlight.js 代码高亮，无刷新预览
-- **🔧 OpenAPI 驱动 DTO**：Schema → Twig 模板 → PHP 类自动生成，零手写 DTO，类型安全保证，CI 自动校验
+- **🔧 OpenAPI 驱动 DTO**：Schema → Twig 模板 → PHP 类自动生成，零手写 DTO，类型安全保证，前后端类型完全同步，CI 自动校验
+- **🎯 Function Calling**：DashScope Function Calling 完整集成，结构化输出 + 缓存机制，Agent 响应质量与速度双提升
 - **👑 VIP 会员 + 配额**：免费 / 月费 / 年费三档，与 z-pay 聚合支付对接，微信/支付宝扫码
 - **📊 可观测性 Dashboard**：ECharts 可视化 Agent 调用量、成功率、P95 耗时、日志流
 
@@ -21,11 +24,13 @@
 | -------- | -------------------------------------------------------------------------------------------------------------- |
 | 前端     | Vue 3 + TypeScript + Pinia + Vue Router 4 + Ant Design Vue 4 + Vite 8 + ECharts 5 + markdown-it + highlight.js |
 | 后端     | Hyperf 3 + Swoole + PHP 8.2 + Eloquent ORM + JWT + PSR-7/15                                                    |
+| Agent 编排 | AgentDAG（拓扑排序 + 协程并行）+ StreamBuffer（流式触发）+ Function Calling（结构化输出）                       |
 | 数据     | MySQL 8 + Redis 7                                                                                              |
-| AI       | 阿里云 DashScope（qwen-plus / wanx2.1 万相文生图）                                                             |
+| AI       | 阿里云 DashScope（qwen-plus Function Calling / wanx2.1 万相文生图）                                            |
 | 配图     | Pexels API / Mermaid.ink / Iconify / Twemoji                                                                   |
 | 托管     | 阿里云 OSS                                                                                                     |
 | 支付     | z-pay（聚合微信 + 支付宝）                                                                                     |
+| 类型系统 | OpenAPI Schema → zircote/swagger-php → openapi-typescript（前后端类型完全同步）                                 |
 | 基础设施 | Docker + Docker Compose + Nginx（SSE 反代）                                                                    |
 
 ## 🚀 快速开始
