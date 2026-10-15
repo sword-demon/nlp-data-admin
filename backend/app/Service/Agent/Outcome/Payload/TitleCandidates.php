@@ -65,3 +65,4 @@ final class TitleCandidates
 
         return new self($titles);
     }
+}
