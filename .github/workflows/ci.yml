@@ -31,6 +31,16 @@ jobs:
         run: |
           composer install --no-interaction --prefer-dist
 
+      - name: 调试 vendor 结构
+        working-directory: backend
+        run: |
+          echo "=== Checking vendor/bin directory ==="
+          ls -la vendor/bin/ || echo "vendor/bin not found"
+          echo "=== Checking zircote/swagger-php ==="
+          ls -la vendor/zircote/swagger-php/bin/ || echo "swagger-php bin not found"
+          echo "=== Checking if zircote/swagger-php is installed ==="
+          composer show zircote/swagger-php || echo "Package not installed"
+
       - name: 生成 swagger.json
         working-directory: backend
         run: |
