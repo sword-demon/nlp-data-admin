@@ -64,6 +64,15 @@ class OpenAICompatibleProvider implements ModelProviderInterface
         yield ''; // unreachable — satisfies Generator return type
     }
 
+    public function chatWithTools(string $prompt, array $messages, array $tools, array $options = []): array
+    {
+        throw new BusinessException(
+            Code::AI_PROVIDER_ERROR,
+            'OpenAICompatibleProvider is a placeholder; not implemented yet',
+            501
+        );
+    }
+
     public function getDefaultModel(): string
     {
         return $this->defaultModel;

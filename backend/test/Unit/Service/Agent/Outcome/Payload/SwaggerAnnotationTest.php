@@ -8,9 +8,11 @@ use App\Service\Agent\Outcome\Payload\ContentDraft;
 use App\Service\Agent\Outcome\Payload\GeneratedImages;
 use App\Service\Agent\Outcome\Payload\ImageAnalyses;
 use App\Service\Agent\Outcome\Payload\OutlineDraft;
+use App\Service\Agent\Outcome\Payload\OutlineNode;
 use App\Service\Agent\Outcome\Payload\ReflectionPayload;
 use App\Service\Agent\Outcome\Payload\ResearchBundle;
 use App\Service\Agent\Outcome\Payload\TitleCandidates;
+use OpenApi\Attributes\Schema;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -21,6 +23,28 @@ use ReflectionClass;
  */
 class SwaggerAnnotationTest extends TestCase
 {
+    public function testSwaggerAttributesAreRuntimeDependencies(): void
+    {
+        $composer = json_decode(
+            file_get_contents(dirname(__DIR__, 6) . '/composer.json'),
+            true,
+            512,
+            JSON_THROW_ON_ERROR
+        );
+
+        $this->assertArrayHasKey('zircote/swagger-php', $composer['require']);
+
+        $lock = json_decode(
+            file_get_contents(dirname(__DIR__, 6) . '/composer.lock'),
+            true,
+            512,
+            JSON_THROW_ON_ERROR
+        );
+
+        $this->assertContains('zircote/swagger-php', array_column($lock['packages'], 'name'));
+        $this->assertNotContains('zircote/swagger-php', array_column($lock['packages-dev'], 'name'));
+    }
+
     /**
      * 测试所有核心 Payload DTO 都有 Schema 注解
      */
@@ -30,6 +54,7 @@ class SwaggerAnnotationTest extends TestCase
             ResearchBundle::class,
             TitleCandidates::class,
             OutlineDraft::class,
+            OutlineNode::class,
             ContentDraft::class,
             ImageAnalyses::class,
             GeneratedImages::class,
@@ -43,6 +68,7 @@ class SwaggerAnnotationTest extends TestCase
             $hasSchemaAttribute = false;
             foreach ($attributes as $attribute) {
                 if (str_contains($attribute->getName(), 'Schema')) {
+                    $this->assertInstanceOf(Schema::class, $attribute->newInstance());
                     $hasSchemaAttribute = true;
                     break;
                 }

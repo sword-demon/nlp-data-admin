@@ -27,6 +27,16 @@ class AbstractAgentTest extends TestCase
                 return 'test_agent';
             }
 
+            public function decodeJson(string $raw, string $agentName): array
+            {
+                return parent::decodeJson($raw, $agentName);
+            }
+
+            public function buildResearchPreamble(?array $researchData): string
+            {
+                return parent::buildResearchPreamble($researchData);
+            }
+
             // 暴露 protected 方法供测试
             public function publicBuildCacheKey(array $context): string
             {
