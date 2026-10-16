@@ -1,0 +1,65 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ namespace }};
+{% if has_validation or has_nested_array %}
+
+use InvalidArgumentException;
+{% endif %}
+
+/**
+ * {{ description }}
+ */
+final class {{ class_name }}
+{
+{% if has_constructor_params %}
+    public function __construct(
+{% for prop in properties %}
+        public readonly {{ prop.php_type }} ${{ prop.name }},
+{% endfor %}
+    ) {
+{% if validations %}
+{% for validation in validations %}
+        {{ validation }}
+{% endfor %}
+{% endif %}
+    }
+{% else %}
+    public function __construct() {}
+{% endif %}
+
+    /**
+     * @return {{ to_array_return_type }}
+     */
+    public function toArray(): array
+    {
+{% if has_constructor_params %}
+        return [
+{% for prop in properties %}
+            '{{ prop.schema_key }}' => {{ prop.to_array_expr }},
+{% endfor %}
+        ];
+{% else %}
+        return [];
+{% endif %}
+    }
+
+    /**
+     * 从数组创建实例
+     *
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): self
+    {
+{% if has_constructor_params %}
+        return new self(
+{% for prop in properties %}
+            {{ prop.name }}: {{ prop.from_array_expr }},
+{% endfor %}
+        );
+{% else %}
+        return new self();
+{% endif %}
+    }
+}

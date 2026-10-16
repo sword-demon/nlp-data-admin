@@ -1,0 +1,58 @@
+openapi: 3.0.0
+info:
+  title: Agent Payload DTOs
+  version: 1.0.0
+components:
+  schemas:
+    TitleCandidate:
+      type: object
+      required: [title, analysis, score]
+      properties:
+        title:
+          type: string
+          description: 候选标题文本
+          example: "如何提升代码质量"
+        analysis:
+          type: string
+          description: 标题分析说明
+          example: "简洁明了,包含关键词"
+        score:
+          type: integer
+          description: 标题评分
+          example: 85
+          minimum: 0
+          maximum: 100
+
+    TitleCandidates:
+      type: object
+      required: [titles]
+      properties:
+        titles:
+          type: array
+          description: 候选标题列表
+          items:
+            $ref: '#/components/schemas/TitleCandidate'
+          minItems: 1
+
+    OutlineNode:
+      type: object
+      required: [id, text, level, parent_id]
+      properties:
+        id:
+          type: integer
+          description: 节点 ID
+          example: 1
+        text:
+          type: string
+          description: 节点文本内容
+          example: "引言"
+        level:
+          type: integer
+          description: 层级深度，1 为一级标题
+          example: 1
+          minimum: 1
+        parent_id:
+          type: integer
+          nullable: true
+          description: 父节点 ID，顶层节点为 null
+          example: null
